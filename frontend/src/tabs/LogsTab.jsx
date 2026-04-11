@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const PACIFICA_BLUE = "#00d1ff";
@@ -9,15 +9,14 @@ export default function LogsTab() {
   const logRef = useRef(null);
   const autoScrollRef = useRef(true);
   const [filterText, setFilterText] = useState("");
+  const [showWarning, setShowWarning] = useState(true); // Default to true to show on mount
 
   useEffect(() => {
-    // Initial fetch of historical logs
     fetch(`${API}/api/logs?limit=500`)
       .then(r => r.json())
       .then(entries => setLogs(entries.map(e => ({ line: e.line, ts: e.timestamp }))))
       .catch(() => {});
 
-    // Establish SSE stream for real-time Bloomberg-style output
     const es = new EventSource(`${API}/api/logs/stream`);
     es.onmessage = (e) => {
       try {
@@ -38,53 +37,65 @@ export default function LogsTab() {
       logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
 
-  /**
-   * Terminal Highlighter - Bloomberg Terminal style syntax highlighting
-   */
   const highlightLine = (text) => {
     if (!text) return null;
-
     let highlighted = text;
-
-    // Highlight Assets (e.g., [WIF], [BTC]) in Water Blue
     highlighted = highlighted.replace(/\[([A-Z0-9]+)\]/g, `<span style="color: ${PACIFICA_BLUE}; font-weight: 900;">[$1]</span>`);
-
-    // Highlight Decisions with icons
     highlighted = highlighted.replace(/\bLONG\b/g, `<span style="color: #22c55e; font-weight: 900;">▲ LONG</span>`);
     highlighted = highlighted.replace(/\bSHORT\b/g, `<span style="color: #ef4444; font-weight: 900;">▼ SHORT</span>`);
     highlighted = highlighted.replace(/\bHOLD\b/g, `<span style="color: #6b7280; font-weight: 900;">─ HOLD</span>`);
-
-    // Highlight Prices
     highlighted = highlighted.replace(/(\$[\d,]+\.?\d*)/g, `<span style="color: #ffffff; font-weight: 700;">$1</span>`);
-
-    // Highlight Percentages
     highlighted = highlighted.replace(/([+-]?\d+\.?\d*%)/g, `<span style="color: #fbbf24; font-weight: 600;">$1</span>`);
-
-    // Highlight Confidence
     highlighted = highlighted.replace(/(conf \d+%)/gi, `<span style="color: ${PACIFICA_BLUE}; font-style: italic; font-weight: 700;">$1</span>`);
-
-    // Highlight RSI
     highlighted = highlighted.replace(/(RSI \d+m: \d+\.?\d*)/gi, `<span style="color: #f472b6; font-weight: 600;">$1</span>`);
-
-    // Highlight Funding
     highlighted = highlighted.replace(/(Funding: ?[+-]?\d+\.?\d*)/gi, `<span style="color: #a78bfa; font-weight: 600;">$1</span>`);
-
-    // Highlight Errors
     highlighted = highlighted.replace(/(ERROR|FAILED|Error|failed)/g, `<span style="color: #ef4444; font-weight: 900; background: rgba(239,68,68,0.1); padding: 0 4px;">$1</span>`);
-
-    // Highlight Success
     highlighted = highlighted.replace(/(SUCCESS|OK|completed|Success)/g, `<span style="color: #22c55e; font-weight: 700;">$1</span>`);
 
     return <div dangerouslySetInnerHTML={{ __html: highlighted }} />;
   };
 
-  // Filter logs based on search text
   const filteredLogs = filterText
     ? logs.filter(log => log.line.toLowerCase().includes(filterText.toLowerCase()))
     : logs;
 
   return (
-    <div className="space-y-4 h-[calc(100vh-250px)] flex flex-col">
+    <div className="relative space-y-4 h-[calc(100vh-250px)] flex flex-col">
+      {/* Self-Hosting Modal */}
+      <AnimatePresence>
+        {showWarning && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="max-w-md w-full bg-zinc-950 border border-zinc-800 p-6 shadow-[0_0_50px_rgba(0,0,0,1)] relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[#00d1ff] to-transparent" />
+              
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-red-500 text-xl">⚠</span>
+                  <h2 className="text-[11px] font-black uppercase tracking-[0.3em] text-[#00d1ff]">System Connectivity Notice</h2>
+                </div>
+                
+                <p className="text-[10px] leading-relaxed font-mono text-zinc-400 uppercase tracking-widest">
+                  To see the agent in action, the agent should be running <span className="text-white">locally</span> or you must <span className="text-white">self-host</span>. 
+                  Since a wallet private key is involved, we do not store sensitive credentials on our servers for your security.
+                </p>
+
+                <button
+                  onClick={() => setShowWarning(false)}
+                  className="mt-2 w-full py-2 bg-[#00d1ff11] border border-[#00d1ff33] text-[#00d1ff] text-[9px] font-black uppercase tracking-[0.2em] hover:bg-[#00d1ff22] transition-all cursor-pointer"
+                >
+                  Acknowledge & Continue
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Terminal Header */}
       <div className="flex justify-between items-center pb-4 border-b border-zinc-900">
         <div className="flex items-center gap-4">
@@ -92,14 +103,15 @@ export default function LogsTab() {
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]" />
             <span className="text-[9px] text-[#00d1ff] font-black uppercase tracking-[0.2em]">LIVE_STREAM</span>
           </div>
+          <span 
+            className="cursor-help text-zinc-600 hover:text-[#00d1ff] transition-colors" 
+            onClick={() => setShowWarning(true)}
+          >
+            ⓘ
+          </span>
           <span className="text-zinc-600 font-mono text-[10px] uppercase tracking-widest">
             Buffer: <span className="text-zinc-400">{filteredLogs.length}</span> / {logs.length}
           </span>
-          {filterText && (
-            <span className="text-[9px] text-[#00d1ff] font-mono uppercase">
-              Filtered by: "{filterText}"
-            </span>
-          )}
         </div>
 
         <div className="flex gap-3">
@@ -150,17 +162,12 @@ export default function LogsTab() {
           <div className="p-4">
             {filteredLogs.map((log, i) => (
               <div key={i} className="flex gap-4 group hover:bg-[#00d1ff03] py-0.5 px-2 -mx-2 rounded-sm">
-                {/* Line Number */}
                 <span className="text-zinc-800 select-none font-mono text-[9px] pt-0.5 w-12 flex-shrink-0 text-right">
                   {(i + 1).toString().padStart(5, '0')}
                 </span>
-
-                {/* Timestamp */}
                 <span className="text-zinc-700 select-none font-mono text-[8px] pt-0.5 w-20 flex-shrink-0">
                   {log.ts ? new Date(log.ts).toLocaleTimeString('en-US', { hour12: false }) : '--:--:--'}
                 </span>
-
-                {/* Log Content */}
                 <div className="text-zinc-400 flex-1 group-hover:text-zinc-200 transition-colors border-l border-zinc-900/50 pl-4 group-hover:border-[#00d1ff]/50">
                   {highlightLine(log.line)}
                 </div>

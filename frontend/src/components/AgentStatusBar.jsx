@@ -97,17 +97,7 @@ export default function AgentStatusBar() {
         )}
 
         {/* Toggle Control */}
-        <button
-          onClick={toggle}
-          disabled={toggling}
-          className={`px-4 py-2 text-xs font-black uppercase tracking-widest transition-all border cursor-pointer ${
-            enabled
-              ? "bg-red-500/10 border-red-500/50 text-red-500 hover:bg-red-500/20 hover:shadow-[0_0_15px_rgba(239,68,68,0.3)]"
-              : "bg-[#00d1ff] border-[#00d1ff] text-black hover:bg-[#00d1ffcc]"
-          } ${toggling ? "opacity-50 cursor-not-allowed" : ""}`}
-        >
-          {toggling ? "STOPPING..." : enabled ? "STOP AGENT" : "START AGENT"}
-        </button>
+        
       </div>
     </div>
   );
