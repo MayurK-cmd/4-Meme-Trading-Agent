@@ -1,12 +1,11 @@
 """
-strategy.py — Gemini 2.5 Flash trading decisions with account context.
+strategy.py — Gemini 2.5 Flash trading decisions for 4.meme memecoin trading.
 
-Improvements over v1:
-  - Gemini prompt uses pre-computed RSI signals ("oversold"/"neutral"/"overbought")
-    instead of raw numbers — null RSI no longer confuses the model
-  - Basis spread (Pacifica vs Binance) included in prompt as an extra signal
-  - Balance-gating unchanged: HOLD if available_to_spend < min_order
-  - Fallback rule engine explicitly gates on RSI signal strings
+This module has been adapted from Pacifica perpetual futures to 4.meme memecoin trading:
+  - LONG/SHORT → BUY/SELL/HOLD
+  - RSI, funding rate, basis spread → bonding curve %, holder concentration, launch age
+  - Account balance checks → BNB wallet balance
+  - Trailing stops → same concept but for spot tokens
 """
 
 import os, json
@@ -16,42 +15,58 @@ from google.genai import types
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 SYSTEM_PROMPT = """
-You are PacificaPilot — an autonomous trading agent for Pacifica perpetual futures markets.
-You receive market data, social sentiment, and the user's live account state.
-Decide: LONG, SHORT, or HOLD.
+You are 4MemePilot — an autonomous AI trading agent specialised in meme tokens on the four.meme launchpad (BNB Smart Chain).
+
+Your job is to analyse the signals below and decide whether to BUY, SELL, or HOLD a position in this token. You are optimising for short-to-medium term momentum trades (minutes to hours), not long-term holds.
 
 Signal interpretation:
-- RSI signal (5m = timing, 1h = trend):
-    "oversold"   → price likely depressed, lean LONG
-    "neutral"    → no RSI edge, lean HOLD unless other signals align
-    "overbought" → price likely extended, lean SHORT
-    "unavailable"→ treat as neutral; do not use RSI for this decision
-- Multi-timeframe rule: if 1h and 5m signals conflict, 1h takes precedence for direction;
-  5m signal only used to improve entry timing within the 1h trend.
-- Funding rate: neutral if |rate| < 0.0001.
-  Positive → longs crowded → slight bearish tilt.
-  Negative → shorts crowded → slight bullish tilt.
-- Sentiment: engagement-based (not polarity). High engagement can be FUD or hype.
-  Weight at most 20% of total decision.
-- Basis spread (Pacifica mark vs Binance spot):
-    "premium"  → Pacifica trades above spot — shorts slightly more attractive, longs face headwind
-    "discount" → Pacifica trades below spot — longs slightly more attractive
-    "normal"   → ignore
-    "unavailable" → ignore
-  If basis_alert is True (spread > 2%), increase weight of basis signal.
+- Bonding curve progress:
+    0-30%   → Early stage, high risk/reward, watch for momentum
+    30-70%  → Momentum phase, best BUY window if social is strong
+    70-95%  → Late stage, graduation pump potential but crowded
+    100%    → Graduated to PancakeSwap, different dynamics
 
-Account rules:
-- If available_to_spend < order_size_usdc → HOLD (not enough collateral).
-- If available_to_spend < 10 → always HOLD.
-- Factor existing open positions when sizing — don't overextend.
+- Holder concentration (rug risk):
+    LOW (<40%)    → Safe, distributed ownership
+    MEDIUM (40-60%) → Some concentration risk
+    HIGH (>60%)   → High rug risk, be cautious
+
+- Launch age:
+    <15 min  → Very new, sniper territory, extreme risk
+    15-60 min → New, high risk/reward
+    1-6 hours → Establishing, finding price discovery
+    6-24 hours → Established, more stable
+    >24 hours → Mature, either dead or proven
+
+- Buy/sell pressure (1h):
+    Ratio >3:1 → Strong buy pressure, momentum building
+    Ratio 1.5-3 → Moderate buy pressure
+    Ratio 0.67-1.5 → Neutral/balanced
+    Ratio <0.67 → Sell pressure dominating
+
+- Liquidity:
+    <$3,000 → Very risky, may not be able to exit
+    $3,000-$50,000 → Moderate, acceptable for small trades
+    >$50,000 → Healthy, safe to trade
+
+- Social sentiment (Elfa AI):
+    Engagement score is NOT polarity — high engagement can be FUD or hype.
+    Weight at most 20% of total decision.
+    Trending rank <20 = strong social momentum.
+
+Wallet rules:
+- If available_bnb < order_size_bnb → HOLD (not enough balance).
+- If available_bnb < 0.01 → always HOLD.
+- Factor existing positions when sizing — don't overextend.
 
 Sizing:
-- size_pct 0.25 = weak signal, 0.5 = moderate, 0.75-1.0 = strong confluence of signals.
-- Default to HOLD when signals conflict or confidence < 0.55.
+- size_pct 0.25 = weak signal / high risk, 0.5 = moderate, 0.75-1.0 = strong confluence
+- Default to HOLD when signals conflict or confidence < 0.55
+- If rug_risk_score > 50, reduce size by half or HOLD
 
 Respond ONLY with valid JSON, no markdown:
 {
-  "action": "LONG" | "SHORT" | "HOLD",
+  "action": "BUY" | "SELL" | "HOLD",
   "confidence": 0.0 to 1.0,
   "reasoning": "2-3 plain English sentences a non-expert can understand",
   "size_pct": 0.25 | 0.5 | 0.75 | 1.0
@@ -73,7 +88,7 @@ def _response_text(response) -> str:
 
 def _normalize(raw: dict, market: dict) -> dict:
     action = str(raw.get("action", "HOLD")).upper()
-    if action not in ("LONG", "SHORT", "HOLD"):
+    if action not in ("BUY", "SELL", "HOLD"):
         action = "HOLD"
     try:
         conf = float(raw.get("confidence", 0.5))
@@ -91,98 +106,103 @@ def _normalize(raw: dict, market: dict) -> dict:
         "reasoning":  str(raw.get("reasoning", "No reasoning provided.")),
         "size_pct":   size,
         "symbol":     market["symbol"],
-        "mark_price": market["mark_price"],
+        "address":    market["address"],
+        "price_usd":  market["price_usd"],
     }
 
 
-def _format_spot_balances(spot_balances: list) -> str:
-    if not spot_balances:
+def _format_holdings(holdings: list) -> str:
+    if not holdings:
         return "None"
     return ", ".join(
-        f"{b['symbol']}: {b['amount']}"
-        for b in spot_balances
-        if b.get("amount", 0) > 0
+        f"{h['symbol']}: {h['amount']:.2f}"
+        for h in holdings
+        if h.get("amount", 0) > 0
     )
 
 
 def decide(
     market: dict,
     sentiment: dict,
-    account_context: dict = None,
-    max_position_usdc: float = 50.0,
+    wallet_context: dict = None,
+    max_position_bnb: float = 0.1,
 ) -> dict:
     """
-    account_context: {
-        usdcBalance, accountEquity, spotCollateral,
-        availableToSpend, usedMargin, spotBalances
+    wallet_context: {
+        bnb_balance, token_holdings
     }
-    max_position_usdc: from user config
+    max_position_bnb: from user config
     """
-    # Pre-computed signal labels (never null — market.py guarantees this)
-    rsi_5m_signal = market.get("rsi_5m_signal", "unavailable")
-    rsi_1h_signal = market.get("rsi_1h_signal", "unavailable")
-    # Raw values only for display
-    rsi_5m_raw = market.get("rsi_14")
-    rsi_1h_raw = market.get("rsi_1h")
-    rsi_5m_str = f"{rsi_5m_raw:.2f}" if rsi_5m_raw is not None else "N/A"
-    rsi_1h_str = f"{rsi_1h_raw:.2f}" if rsi_1h_raw is not None else "N/A"
-    funding    = market.get("funding_rate", 0) or 0
+    # Pre-computed signal labels from market.py
+    bonding_signal = market.get("bonding_signal", "unknown")
+    holder_signal = market.get("holder_signal", "LOW")
+    age_signal = market.get("age_signal", "unknown")
+    buy_sell_signal = market.get("buy_sell_signal", "neutral")
+    liq_signal = market.get("liquidity_signal", "unknown")
 
-    # Basis spread section
-    basis_pct    = market.get("basis_pct")
-    basis_signal = market.get("basis_signal", "unavailable")
-    basis_alert  = market.get("basis_alert", False)
-    basis_str    = (
-        f"{basis_pct:+.2f}% ({basis_signal}){' ⚠ ALERT' if basis_alert else ''}"
-        if basis_pct is not None else "unavailable"
-    )
-    binance_spot = market.get("binance_spot")
-    spot_str     = f"${binance_spot:,.2f}" if binance_spot else "N/A"
+    # Raw values for display
+    bonding_pct = market.get("bonding_curve_pct", 0)
+    top10_pct = market.get("top10_holder_pct", 0)
+    buy_sell_ratio = market.get("buy_sell_ratio", 1.0)
+    launched_min = market.get("launched_min_ago", 0)
+    liquidity = market.get("liquidity_usd", 0)
+    rug_risk = market.get("rug_risk_score", 0)
 
-    # Account section
-    if account_context:
-        available   = account_context.get("availableToSpend", 0)
-        equity      = account_context.get("accountEquity", 0)
-        usdc_bal    = account_context.get("usdcBalance", 0)
-        used_margin = account_context.get("usedMargin", 0)
-        spot_bal    = _format_spot_balances(account_context.get("spotBalances", []))
-        account_section = f"""
-Account state:
-- USDC balance:       ${usdc_bal:,.2f}
-- Account equity:     ${equity:,.2f}
-- Available to spend: ${available:,.2f}  ← key constraint
-- Used margin:        ${used_margin:,.2f}
-- Spot holdings:      {spot_bal}
-- Max order size:     ${max_position_usdc:,.2f}
+    # Wallet section
+    if wallet_context:
+        bnb_balance = wallet_context.get("bnb_balance", 0)
+        holdings = _format_holdings(wallet_context.get("token_holdings", []))
+        wallet_section = f"""
+Wallet state:
+- BNB balance:        {bnb_balance:.4f} BNB
+- Token holdings:     {holdings}
+- Max order size:     {max_position_bnb:.4f} BNB
 """
     else:
-        account_section = "Account state: unavailable\n"
+        wallet_section = "Wallet state: unavailable\n"
+
+    # Sentiment section
+    sentiment_score = sentiment.get("sentiment_score", 0)
+    mention_count = sentiment.get("mention_count", 0)
+    trending_rank = sentiment.get("trending_score", 0)
+    sentiment_summary = sentiment.get("summary", "No sentiment data")
 
     user_msg = f"""
-Market: {market['symbol']}
-- Mark price:       ${market['mark_price']:,.2f}
-- Binance spot:     {spot_str}
-- Basis spread:     {basis_str}   (Pacifica mark vs Binance spot)
-- 24h change:       {market['change_24h']:.2f}%
-- RSI-14 (5m):      {rsi_5m_str}  → signal: {rsi_5m_signal}
-- RSI-14 (1h):      {rsi_1h_str}  → signal: {rsi_1h_signal}
-- Funding rate:     {funding:.6f}  (neutral if |rate| < 0.0001)
-- Volume 24h:       ${market.get('volume_24h', 0):,.0f}
+Token: {market['symbol']} ({market['address']})
 
-Social sentiment (Elfa AI — engagement strength, not polarity):
-- Score:            {sentiment['sentiment_score']:+.3f}  (0=none, 1=very high)
-- Mentions (24h):   {sentiment['mention_count']}
-- Trending rank:    {sentiment['trending_score']:.0f}/100
-- Summary:          {sentiment['summary']}
+── PRICE & MARKET ──
+  Price (BNB):        {market['price_bnb']:.10f} BNB
+  Price (USD):        ${market['price_usd']:.8f}
+  Market Cap:         ${market['market_cap_usd']:,.0f}
+  24h Volume:         ${market['volume_24h_usd']:,.0f}
+  Liquidity Pool:     ${liquidity:,.0f}  → {liq_signal}
 
-Open position:      {market.get('open_position', 'None')}
-Unrealised PnL:     {market.get('unrealized_pnl', 'N/A')}
-{account_section}
+── FOUR.MEME LAUNCH METRICS ──
+  Launched:           {launched_min} minutes ago  → {age_signal}
+  Bonding Curve Fill: {bonding_pct:.1f}%  → {bonding_signal}
+  Holder Count:       {market['holder_count']} wallets
+  Top-10 Holders:     {top10_pct:.1f}% of supply  → Concentration Risk: {holder_signal}
+  Buy/Sell (1h):      {market['buy_count_1h']} buys / {market['sell_count_1h']} sells  → {buy_sell_signal}
+
+── SOCIAL SENTIMENT (Elfa AI) ──
+  Engagement Score:   {sentiment_score:.2f} / 1.0 (0=none, 1=very high)
+  Mentions (24h):     {mention_count}
+  Trending rank:      {trending_rank:.0f}/100
+  Summary:            {sentiment_summary}
+
+── RISK ASSESSMENT ──
+  Rug Risk Score:     {rug_risk}/100  (0=safe, 100=extreme risk)
+  Graduated:          {'Yes' if market.get('graduated') else 'No'}
+  Graduation Soon:    {'Yes' if market.get('graduation_imminent') else 'No'}
+  AI Creator:         {'Yes' if market.get('ai_creator') else 'No'}
+  Anti-Sniper Fee:    {'Yes' if market.get('fee_plan') else 'No'}
+
+{wallet_section}
 What is your trading decision?
 """
 
     if not GEMINI_API_KEY:
-        return _fallback(market, sentiment, account_context, max_position_usdc)
+        return _fallback(market, sentiment, wallet_context, max_position_bnb)
 
     try:
         client   = genai.Client(api_key=GEMINI_API_KEY)
@@ -205,106 +225,132 @@ What is your trading decision?
         return _normalize(json.loads(text.strip()), market)
     except Exception as e:
         print(f"[Strategy] Gemini failed for {market['symbol']}: {e} — using fallback")
-        return _fallback(market, sentiment, account_context, max_position_usdc)
+        return _fallback(market, sentiment, wallet_context, max_position_bnb)
 
 
 def _fallback(
     market: dict,
     sentiment: dict,
-    account_context: dict = None,
-    max_position_usdc: float = 50.0,
+    wallet_context: dict = None,
+    max_position_bnb: float = 0.1,
 ) -> dict:
     """
-    Rule-based fallback. Uses RSI signal strings (not raw numbers) so behaviour
-    is identical whether RSI data is available or not.
+    Rule-based fallback for 4.meme memecoin trading.
+    Uses pre-computed signal labels from market.py.
     """
-    rsi_5m_signal = market.get("rsi_5m_signal", "unavailable")
-    rsi_1h_signal = market.get("rsi_1h_signal", "unavailable")
-    # Keep raw for fine-grained numeric thresholds where available
-    rsi_5m  = market.get("rsi_14") or 50.0
-    rsi_1h  = market.get("rsi_1h") or rsi_5m
-    sent    = sentiment.get("sentiment_score", 0.0) or 0.0
-    funding = market.get("funding_rate", 0.0) or 0.0
+    bonding_signal = market.get("bonding_signal", "unknown")
+    holder_signal = market.get("holder_signal", "LOW")
+    age_signal = market.get("age_signal", "unknown")
+    buy_sell_signal = market.get("buy_sell_signal", "neutral")
+    liq_signal = market.get("liquidity_signal", "unknown")
 
-    # Balance check — don't act if not enough free collateral
-    if account_context:
-        available = account_context.get("availableToSpend", 0)
-        min_order = max_position_usdc * 0.25
-        if available < min_order:
+    bonding_pct = market.get("bonding_curve_pct", 0)
+    top10_pct = market.get("top10_holder_pct", 0)
+    buy_sell_ratio = market.get("buy_sell_ratio", 1.0)
+    launched_min = market.get("launched_min_ago", 0)
+    liquidity = market.get("liquidity_usd", 0)
+    rug_risk = market.get("rug_risk_score", 0)
+
+    sent_score = sentiment.get("sentiment_score", 0)
+    trending_rank = sentiment.get("trending_score", 0)
+
+    # Wallet check
+    if wallet_context:
+        bnb_balance = wallet_context.get("bnb_balance", 0)
+        min_order = max_position_bnb * 0.25
+        if bnb_balance < min_order:
             return {
                 "action":     "HOLD",
                 "confidence": 1.0,
-                "reasoning":  (
-                    f"Insufficient collateral — ${available:.2f} available, "
-                    f"minimum order is ${min_order:.2f}."
-                ),
+                "reasoning":  f"Insufficient BNB balance — {bnb_balance:.4f} BNB available, minimum order is {min_order:.4f} BNB.",
                 "size_pct":   0.0,
                 "symbol":     market["symbol"],
-                "mark_price": market["mark_price"],
+                "address":    market["address"],
+                "price_usd":  market["price_usd"],
             }
 
-    FUNDING_THRESHOLD = 1e-4
-    action     = "HOLD"
-    confidence = 0.45
-    size_pct   = 0.25
+    # Scoring system
+    buy_score  = 0
+    sell_score = 0
     signals    = []
 
-    long_score  = 0
-    short_score = 0
+    # Bonding curve (max 3 points)
+    if bonding_signal == "momentum_phase":
+        buy_score += 3; signals.append("bonding curve in momentum phase (30-70%)")
+    elif bonding_signal == "early_stage":
+        buy_score += 1; signals.append("early bonding stage (high risk/reward)")
+    elif bonding_signal == "graduation_soon":
+        buy_score += 2; signals.append("near graduation (potential pump)")
+    elif bonding_signal == "late_stage":
+        buy_score += 1; signals.append("late stage (crowded)")
 
-    # 1h signal drives trend direction (weight 3)
-    if rsi_1h_signal == "oversold":
-        long_score += 3; signals.append(f"1h RSI oversold ({rsi_1h:.1f})")
-    elif rsi_1h_signal == "neutral" and rsi_1h < 45:
-        long_score += 1; signals.append(f"1h RSI low-neutral ({rsi_1h:.1f})")
-    elif rsi_1h_signal == "overbought":
-        short_score += 3; signals.append(f"1h RSI overbought ({rsi_1h:.1f})")
-    elif rsi_1h_signal == "neutral" and rsi_1h > 55:
-        short_score += 1; signals.append(f"1h RSI high-neutral ({rsi_1h:.1f})")
+    # Holder concentration (risk modifier)
+    if holder_signal == "HIGH":
+        sell_score += 3; signals.append("high holder concentration risk")
+    elif holder_signal == "MEDIUM":
+        sell_score += 1; signals.append("moderate holder concentration")
 
-    # 5m signal refines timing (weight 2)
-    if rsi_5m_signal == "oversold":
-        long_score += 2; signals.append(f"5m RSI oversold ({rsi_5m:.1f})")
-    elif rsi_5m_signal == "overbought":
-        short_score += 2; signals.append(f"5m RSI overbought ({rsi_5m:.1f})")
-    # "unavailable" contributes nothing — no phantom signals
+    # Launch age
+    if age_signal == "very_new":
+        sell_score += 2; signals.append("very new token (<15 min, sniper risk)")
+    elif age_signal == "new":
+        buy_score += 1; signals.append("new token with room to grow")
+    elif age_signal == "established":
+        buy_score += 1; signals.append("established token (>6h)")
 
-    # Funding
-    if funding < -FUNDING_THRESHOLD:
-        long_score  += 1; signals.append("crowded shorts (neg funding)")
-    elif funding > FUNDING_THRESHOLD:
-        short_score += 1; signals.append("crowded longs (pos funding)")
+    # Buy/sell pressure
+    if buy_sell_signal == "strong_buy_pressure":
+        buy_score += 3; signals.append("strong buy pressure (>3:1 ratio)")
+    elif buy_sell_signal == "moderate_buy_pressure":
+        buy_score += 2; signals.append("moderate buy pressure")
+    elif buy_sell_signal == "strong_sell_pressure":
+        sell_score += 2; signals.append("sell pressure dominating")
 
-    # Sentiment engagement
-    if sent > 0.3:
-        long_score += 1; signals.append(f"high engagement ({sent:.2f})")
+    # Liquidity
+    if liq_signal == "critical_low":
+        sell_score += 2; signals.append("critically low liquidity")
+    elif liq_signal == "low":
+        sell_score += 1; signals.append("low liquidity")
+    elif liq_signal == "healthy":
+        buy_score += 1; signals.append("healthy liquidity")
 
-    # Basis spread signal
-    basis_signal = market.get("basis_signal", "normal")
-    basis_alert  = market.get("basis_alert", False)
-    if basis_alert:
-        weight = 2 if basis_alert else 1
-        if basis_signal == "discount":
-            long_score  += weight; signals.append(f"Pacifica discount vs spot ({market.get('basis_pct', 0):+.2f}%)")
-        elif basis_signal == "premium":
-            short_score += weight; signals.append(f"Pacifica premium vs spot ({market.get('basis_pct', 0):+.2f}%)")
+    # Social sentiment
+    if sent_score > 0.6:
+        buy_score += 2; signals.append("high social engagement")
+    elif sent_score > 0.3:
+        buy_score += 1; signals.append("moderate social engagement")
 
+    if trending_rank > 0 and trending_rank < 20:
+        buy_score += 2; signals.append(f"trending rank #{int(trending_rank)}")
+
+    # Rug risk override
+    if rug_risk > 70:
+        sell_score += 5; signals.append("extreme rug risk")
+    elif rug_risk > 50:
+        sell_score += 2; signals.append("elevated rug risk")
+
+    # Decision threshold
     threshold = 4
-    if long_score >= threshold and long_score > short_score:
-        action     = "LONG"
-        confidence = min(0.5 + (long_score - threshold) * 0.08, 0.82)
-        size_pct   = 0.25 if long_score < 5 else (0.5 if long_score < 7 else 0.75)
-    elif short_score >= threshold and short_score > long_score:
-        action     = "SHORT"
-        confidence = min(0.5 + (short_score - threshold) * 0.08, 0.82)
-        size_pct   = 0.25 if short_score < 5 else (0.5 if short_score < 7 else 0.75)
+    if buy_score >= threshold and buy_score > sell_score:
+        action = "BUY"
+        confidence = min(0.5 + (buy_score - threshold) * 0.08, 0.85)
+        # Reduce size for high risk
+        if rug_risk > 30:
+            size_pct = 0.25 if buy_score < 6 else 0.5
+        else:
+            size_pct = 0.25 if buy_score < 5 else (0.5 if buy_score < 7 else 0.75)
+    elif sell_score >= threshold and sell_score > buy_score:
+        action = "SELL"
+        confidence = min(0.5 + (sell_score - threshold) * 0.08, 0.85)
+        size_pct = 0.25 if sell_score < 5 else (0.5 if sell_score < 7 else 0.75)
+    else:
+        action = "HOLD"
+        confidence = 0.45
+        size_pct = 0.0
 
     reasoning = f"[Fallback] {action}: " + (
         ", ".join(signals) if signals
-        else (
-            f"No clear signal — RSI 5m={rsi_5m_signal} 1h={rsi_1h_signal}, "
-            f"funding={funding:.6f}"
-        )
+        else f"No clear signal — bonding={bonding_signal}, holders={holder_signal}, age={age_signal}"
     )
 
     return {
@@ -313,5 +359,6 @@ def _fallback(
         "reasoning":  reasoning,
         "size_pct":   size_pct,
         "symbol":     market["symbol"],
-        "mark_price": market["mark_price"],
+        "address":    market["address"],
+        "price_usd":  market["price_usd"],
     }

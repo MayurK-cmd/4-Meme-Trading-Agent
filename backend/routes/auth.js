@@ -15,7 +15,7 @@ router.post("/sync", requireAuth, async (req, res) => {
 
     const user = await User.findByIdAndUpdate(
       req.user._id, { $set: update }, { new: true }
-    ).select("-pacificaPrivateKey -pacificaApiKey");
+    ).select("-bscPrivateKeyEnc");
 
     res.json({ user, onboarded: user.onboarded });
   } catch (e) {
@@ -24,24 +24,23 @@ router.post("/sync", requireAuth, async (req, res) => {
 });
 
 // POST /api/auth/keys
-// Saves encrypted Pacifica private key (and optional API key) — onboarding step
+// Saves encrypted BSC private key — onboarding step for 4.meme trading
 router.post("/keys", requireAuth, async (req, res) => {
   try {
-    const { pacificaPrivateKey, pacificaApiKey, pacificaAddress } = req.body;
+    const { bscPrivateKey, bscAddress } = req.body;
 
-    if (!pacificaAddress) {
-      return res.status(400).json({ error: "pacificaAddress (Solana main wallet pubkey) is required" });
+    if (!bscAddress || !bscAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return res.status(400).json({ error: "Invalid BSC address" });
     }
-    if (!pacificaPrivateKey) {
-      return res.status(400).json({ error: "pacificaPrivateKey is required" });
+    if (!bscPrivateKey) {
+      return res.status(400).json({ error: "bscPrivateKey is required" });
     }
 
     const update = {
-      pacificaAddress,                            // plain — it's a public key
-      pacificaPrivateKey: encrypt(pacificaPrivateKey),
+      bscAddress,                                 // plain — it's a public key
+      bscPrivateKeyEnc: encrypt(bscPrivateKey),   // encrypted private key
       onboarded: true,
     };
-    if (pacificaApiKey) update.pacificaApiKey = encrypt(pacificaApiKey);
 
     await User.findByIdAndUpdate(req.user._id, { $set: update });
     res.json({ ok: true });
@@ -54,18 +53,19 @@ router.post("/keys", requireAuth, async (req, res) => {
 // Returns current user's profile (no keys)
 router.get("/me", requireAuth, async (req, res) => {
   const user = await User.findById(req.user._id)
-    .select("-pacificaPrivateKey -pacificaApiKey");
+    .select("-bscPrivateKeyEnc");
   res.json(user);
 });
 
-
+// POST /api/auth/wallet
+// Just saves BSC wallet address (for users who want to add wallet later)
 router.post("/wallet", requireAuth, async (req, res) => {
   try {
-    const { pacificaAddress } = req.body;
-    if (!pacificaAddress || !pacificaAddress.match(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/)) {
-      return res.status(400).json({ error: "Invalid Solana address" });
+    const { bscAddress } = req.body;
+    if (!bscAddress || !bscAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return res.status(400).json({ error: "Invalid BSC address" });
     }
-    await User.findByIdAndUpdate(req.user._id, { $set: { pacificaAddress } });
+    await User.findByIdAndUpdate(req.user._id, { $set: { bscAddress } });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

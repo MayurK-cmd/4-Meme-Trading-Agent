@@ -36,13 +36,12 @@ function requireAgentKey(req, res, next) {
 // ── GET /api/agent/config ──────────────────────────────────────────────────────
 // Called by the Python agent every loop to get:
 //   - enabled flag (user toggled from frontend)
-//   - walletAddress (Solana pubkey to query Pacifica)
-//   - all trading params (symbols, limits, risk settings)
+//   - walletAddress (BSC address for 4.meme trading)
+//   - all trading params (scan mode, risk settings, filters)
 // Protected by x-agent-key header only — no JWT needed
 app.get("/api/agent/config", requireAgentKey, async (req, res) => {
   try {
     // Single-user setup: find the one onboarded user
-    // For multi-user: agent would pass a userId and we'd look up that specific user
     const user = await User.findOne({ onboarded: true }).lean();
     if (!user) {
       return res.json({
@@ -59,24 +58,44 @@ app.get("/api/agent/config", requireAgentKey, async (req, res) => {
       });
     }
 
-    if (!user.pacificaAddress) {
+    if (!user.walletAddress) {
       return res.json({
         enabled: false,
-        reason:  "User has no Solana wallet address saved — complete onboarding",
+        reason:  "User has no BSC wallet address saved — complete onboarding",
       });
     }
 
     res.json({
+      // Agent control
       enabled:             cfg.enabled,
-      walletAddress:       user.pacificaAddress,   // Solana pubkey for Pacifica GET /account
-      symbols:             cfg.symbols,
-      loopIntervalSeconds: cfg.loopIntervalSeconds,
-      maxPositionUsdc:     cfg.maxPositionUsdc,
-      minConfidence:       cfg.minConfidence,
+      walletAddress:       user.walletAddress,  // BSC address for 4.meme
       dryRun:              cfg.dryRun,
-      riskLevel:           cfg.riskLevel,
+
+      // 4.meme scan settings
+      scanMode:            cfg.scanMode,
+      watchlist:           cfg.watchlist,
+
+      // Position sizing
+      maxPositionBnb:      cfg.maxPositionBnb,
+      maxPositionUsd:      cfg.maxPositionUsd,
+      maxOpenPositions:    cfg.maxOpenPositions,
+
+      // Risk management
+      minConfidence:       cfg.minConfidence,
       stopLossPct:         cfg.stopLossPct,
       takeProfitPct:       cfg.takeProfitPct,
+
+      // Filtering criteria
+      minLiquidityUsd:     cfg.minLiquidityUsd,
+      maxRugRisk:          cfg.maxRugRisk,
+      bondingCurveRange:   [cfg.bcMinPct, cfg.bcMaxPct],
+
+      // Loop timing
+      loopIntervalSeconds: cfg.loopIntervalSeconds,
+
+      // Legacy fields (for backwards compatibility)
+      symbols:             cfg.symbols || [],
+      riskLevel:           cfg.riskLevel,
       useBinanceFallback:  cfg.useBinanceFallback,
     });
   } catch (e) {

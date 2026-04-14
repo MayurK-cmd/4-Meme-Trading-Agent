@@ -2,33 +2,7 @@ const express  = require("express");
 const router   = express.Router();
 const mongoose = require("mongoose");
 const { requireAuth } = require("../middleware/auth");
-
-const tradeSchema = new mongoose.Schema({
-  userId:          { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  symbol:          { type: String, required: true, uppercase: true, trim: true },
-  action:          { type: String, required: true, enum: ["LONG","SHORT","HOLD","EXIT"] },
-  confidence:      { type: Number, default: null },
-  reasoning:       { type: String, default: "" },
-  size_pct:        { type: Number, default: 0 },
-  mark_price:      { type: Number, default: null },
-  rsi_14:          { type: Number, default: null },
-  rsi_1h:          { type: Number, default: null },
-  funding_rate:    { type: Number, default: null },
-  change_24h:      { type: Number, default: null },
-  sentiment_score: { type: Number, default: null },
-  mention_count:   { type: Number, default: null },
-  trending_score:  { type: Number, default: null },
-  order:           { type: mongoose.Schema.Types.Mixed, default: null },
-  dry_run:         { type: Boolean, default: true },
-  pnl_usdc:        { type: Number, default: null },
-  open_position:   { type: String, default: null },
-  unrealized_pnl:  { type: String, default: null },
-}, { timestamps: true });
-
-tradeSchema.index({ userId: 1, createdAt: -1 });
-tradeSchema.index({ userId: 1, symbol: 1 });
-
-const Trade = mongoose.models.Trade || mongoose.model("Trade", tradeSchema);
+const Trade = require("../models/Trade");
 
 // GET /api/trades - requires JWT
 router.get("/", requireAuth, async (req, res) => {

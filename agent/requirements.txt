@@ -1,5 +1,20 @@
+# 4MemePilot Agent Dependencies
+
+# HTTP client
 requests>=2.31.0
+
+# Google Gemini AI
 google-genai>=0.3.0
-solders>=0.21.0
+
+# BSC/Web3 interaction
+web3>=6.0.0
+
+# Environment configuration
 python-dotenv>=1.0.0
+
+# Async support (for web3.py)
 websockets>=12.0
+
+# Optional: For advanced trading features
+# pandas>=2.0.0        # Data analysis
+# numpy>=1.24.0        # Numerical operations

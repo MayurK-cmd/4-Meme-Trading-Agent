@@ -1,18 +1,17 @@
 """
-sentiment.py — Elfa AI sentiment with proper polarity vs engagement separation.
+sentiment.py — Elfa AI sentiment for 4.meme memecoin trading.
 
-Fixes:
-  - Engagement volume is NOT sentiment polarity — tracked separately
-  - sentiment_score is now 0..1 engagement strength (not fake -1..+1 polarity)
-  - trending_score uses pageSize=100 with mention-based fallback
-  - Exponential backoff on failures
+This module fetches social sentiment data from Elfa AI for memecoin tokens.
+Key concepts:
+  - sentiment_score = engagement STRENGTH (0-1), not polarity
+  - High engagement can be FUD or hype — use as confirmation only
+  - Trending rank shows social momentum
 """
 
 import os, time, math, requests
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from the agent directory
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 ELFA_API_KEY  = os.getenv("ELFA_API_KEY", "")
@@ -20,6 +19,7 @@ ELFA_BASE_URL = "https://api.elfa.ai"
 
 
 def _elfa_get(path: str, params: dict = None, retries: int = 3) -> dict:
+    """Call Elfa API with retry logic."""
     headers = {"x-elfa-api-key": ELFA_API_KEY}
     url     = f"{ELFA_BASE_URL}{path}"
     for attempt in range(retries):
@@ -35,6 +35,7 @@ def _elfa_get(path: str, params: dict = None, retries: int = 3) -> dict:
 
 
 def _unwrap(response) -> list:
+    """Extract data list from API response."""
     if isinstance(response, dict):
         data = response.get("data", [])
         return data if isinstance(data, list) else []
@@ -45,10 +46,12 @@ def _unwrap(response) -> list:
 
 def get_token_sentiment(symbol: str) -> dict:
     """
+    Fetch Elfa AI sentiment for a memecoin token.
+
     Returns:
       sentiment_score: 0.0-1.0 — engagement STRENGTH (high = lots of quality activity)
-      mention_count:   int
-      trending_score:  0-100 rank-based
+      mention_count:   int — number of quality mentions in 24h
+      trending_score:  0-100 rank-based (100 = #1 trending)
       engagement_note: plain English interpretation
       summary:         full summary string
     """
@@ -136,7 +139,52 @@ def get_token_sentiment(symbol: str) -> dict:
     }
 
 
+def get_trending_tokens(limit: int = 20) -> list:
+    """
+    Fetch currently trending tokens from Elfa AI.
+    Returns list of token symbols sorted by trending score.
+    """
+    if not ELFA_API_KEY:
+        return []
+
+    try:
+        raw = _elfa_get("/v2/aggregations/trending-tokens", params={"timeWindow": "24h", "pageSize": limit})
+        tokens = _unwrap(raw)
+
+        result = []
+        for item in tokens:
+            if not isinstance(item, dict):
+                continue
+            token_obj = item.get("token", {})
+            sym = str(token_obj.get("symbol", "")).upper().lstrip("$")
+            if sym:
+                result.append(sym)
+
+        return result
+    except Exception as e:
+        print(f"[Elfa] Failed to fetch trending tokens: {e}")
+        return []
+
+
+def search_token_mentions(symbol: str, limit: int = 10) -> list:
+    """
+    Search for recent mentions of a token.
+    Returns list of mention objects with content, likes, etc.
+    """
+    if not ELFA_API_KEY:
+        return []
+
+    try:
+        raw = _elfa_get("/v2/data/top-mentions", params={"ticker": symbol, "timeWindow": "24h", "limit": limit})
+        mentions = _unwrap(raw)
+        return mentions
+    except Exception as e:
+        print(f"[Elfa] Failed to search mentions for {symbol}: {e}")
+        return []
+
+
 def _mock(symbol: str) -> dict:
+    """Mock sentiment data when Elfa API key is not set."""
     return {
         "symbol":          symbol,
         "sentiment_score": 0.0,

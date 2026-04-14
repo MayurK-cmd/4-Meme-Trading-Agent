@@ -1,76 +1,70 @@
 """
-executor.py — Places/closes market orders on Pacifica with full position management.
+executor.py — 4.meme memecoin trade execution on BSC.
 
-Improvements over v1:
-  - Dynamic balance-aware sizing: usdc_size capped at available_balance * 0.9
-  - Trailing stops: trailing_high/trailing_low updated each cycle, stop trails the peak
-  - Persistent position tracking: positions.json survives agent restarts
-  - walletAddress comes from backend config, NOT derived from private key
-  - stop_loss_pct and take_profit_pct come from config per cycle, NOT env vars
+Replaces Pacifica order placement with 4.meme TokenManager contract calls:
+  - BUY/SELL instead of LONG/SHORT
+  - BSC transactions instead of Pacifica API
+  - Token balance tracking instead of perpetual positions
+  - Integration with TradeLogger contract for on-chain audit
 """
 
-import os, json, time, uuid, base58, requests
+import os, json, time, uuid
 from pathlib import Path
 from dotenv import load_dotenv
-from solders.keypair import Keypair
+from web3 import Web3
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
-BASE_URL           = os.getenv("PACIFICA_BASE_URL", "https://test-api.pacifica.fi/api/v1")
-PRIVATE_KEY        = os.getenv("PACIFICA_PRIVATE_KEY", "")
-AGENT_PRIVATE_KEY  = os.getenv("PACIFICA_AGENT_PRIVATE_KEY", "")
-AGENT_PUBLIC_KEY   = os.getenv("PACIFICA_AGENT_PUBLIC_KEY", "")
-ORDER_SLIPPAGE_PCT = os.getenv("ORDER_SLIPPAGE_PERCENT", "0.5")
-DRY_RUN            = os.getenv("DRY_RUN", "true").lower() == "true"
+import four_meme as fm
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+
+BSC_RPC_URL       = os.getenv("BSC_RPC_URL", "https://bsc-dataseed.binance.org")
+WALLET_PRIVATE_KEY = os.getenv("WALLET_PRIVATE_KEY", "")
+# WALLET_ADDRESS is set from backend config at runtime (see main.py)
+WALLET_ADDRESS    = ""
+DRY_RUN           = os.getenv("DRY_RUN", "true").lower() == "true"
+
+# TradeLogger contract (deployed on BSC)
+TRADE_LOGGER_ADDRESS = os.getenv("TRADE_LOGGER_ADDRESS", "0xEe39002BF9783DB5dac224Df968D0e3c5CE39a2B")
+
+# TradeLogger ABI (minimal)
+TRADE_LOGGER_ABI = [
+    {
+        "inputs": [
+            {"internalType": "string", "name": "tokenSymbol", "type": "string"},
+            {"internalType": "address", "name": "tokenAddress", "type": "address"},
+            {"internalType": "string", "name": "action", "type": "string"},
+            {"internalType": "uint256", "name": "priceInWei", "type": "uint256"},
+            {"internalType": "int256", "name": "pnlUsdc", "type": "int256"},
+            {"internalType": "uint8", "name": "confidence", "type": "uint8"},
+            {"internalType": "uint8", "name": "bondingCurvePct", "type": "uint8"},
+            {"internalType": "uint32", "name": "socialScore", "type": "uint32"},
+            {"internalType": "uint32", "name": "mentionCount", "type": "uint32"},
+            {"internalType": "uint16", "name": "holderCount", "type": "uint16"},
+            {"internalType": "bool", "name": "isTrending", "type": "bool"},
+            {"internalType": "string", "name": "reasoning", "type": "string"},
+            {"internalType": "bool", "name": "dryRun", "type": "bool"},
+        ],
+        "name": "logDecision",
+        "outputs": [{"internalType": "uint256", "name": "id", "type": "uint256"}],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+]
+
+# BSC Web3 setup
+web3 = Web3(Web3.HTTPProvider(BSC_RPC_URL))
+trade_logger = web3.eth.contract(address=TRADE_LOGGER_ADDRESS, abi=TRADE_LOGGER_ABI)
+
+# ── Persistent position tracking ──────────────────────────────────────────────
 
 POSITIONS_FILE = Path(__file__).parent / "positions.json"
 
 _open_positions: dict = {}
-_keypair              = None
-_agent_keypair        = None
-
-
-# ── Persistent position tracking ──────────────────────────────────────────────
-
-# Add this near the top of executor.py with the other module-level vars
-_market_info_cache: dict = {}   # symbol → { lot_size, tick_size, min_order_size }
-
-def _get_market_info(symbol: str) -> dict:
-    global _market_info_cache
-    if symbol in _market_info_cache:
-        return _market_info_cache[symbol]
-    try:
-        r = requests.get(f"{BASE_URL}/info", headers=_headers(), timeout=10)
-        r.raise_for_status()
-        data = r.json().get("data", [])
-        for m in data:
-            _market_info_cache[m["symbol"]] = {
-                "lot_size":       float(m.get("lot_size", "0.0001")),
-                "tick_size":      float(m.get("tick_size", "0.01")),
-                "min_order_size": float(m.get("min_order_size", "10")),
-            }
-        return _market_info_cache.get(symbol, {"lot_size": 0.0001, "tick_size": 0.01, "min_order_size": 10})
-    except Exception as e:
-        print(f"[Executor] Could not fetch market info for {symbol}: {e}")
-        return {"lot_size": 0.0001, "tick_size": 0.01, "min_order_size": 10}
-
-
-def _usdc_to_coin_amount(usdc_size: float, mark_price: float, lot_size: float) -> str:
-    """
-    Pacifica amount field = coin quantity (not USDC).
-    $10 of WIF at $0.18 = 55.55 WIF → rounded to lot_size → "55.0"
-    """
-    if mark_price <= 0:
-        raise ValueError(f"Invalid mark price: {mark_price}")
-    raw_coins = usdc_size / mark_price
-    # Round DOWN to nearest lot_size multiple
-    snapped = int(raw_coins / lot_size) * lot_size
-    # Format without trailing noise
-    decimals = max(0, -int(f"{lot_size:e}".split("e")[1]))
-    return f"{snapped:.{decimals}f}"
 
 def _load_positions() -> dict:
-    """Load positions from disk on startup so restarts don't lose open trades."""
+    """Load positions from disk on startup."""
     try:
         if POSITIONS_FILE.exists():
             data = json.loads(POSITIONS_FILE.read_text())
@@ -89,395 +83,346 @@ def _save_positions():
         print(f"[Executor] Could not save positions.json: {e}")
 
 
-# Load persisted positions at import time (survives restarts)
+# Load persisted positions at import time
 _open_positions = _load_positions()
 
 
-# ── Key management ────────────────────────────────────────────────────────────
+# ── Wallet context ────────────────────────────────────────────────────────────
 
-def _get_keypair() -> Keypair:
-    global _keypair
-    if _keypair is None:
-        raw = PRIVATE_KEY.strip()
-        if not raw:
-            raise RuntimeError("PACIFICA_PRIVATE_KEY is not set in agent .env")
-        try:
-            _keypair = Keypair.from_base58_string(raw)
-        except Exception:
-            _keypair = Keypair.from_bytes(base58.b58decode(raw))
-    return _keypair
+def get_wallet_context() -> dict:
+    """
+    Get current wallet state for strategy decisions.
+    """
+    if not WALLET_ADDRESS:
+        return {"bnb_balance": 0.0, "token_holdings": []}
 
+    bnb_balance = fm.get_wallet_bnb_balance(WALLET_ADDRESS)
 
-def _get_agent_keypair() -> Keypair:
-    global _agent_keypair
-    if _agent_keypair is None:
-        raw = AGENT_PRIVATE_KEY.strip()
-        if not raw:
-            raise RuntimeError("PACIFICA_AGENT_PRIVATE_KEY is not set in agent .env")
-        try:
-            _agent_keypair = Keypair.from_base58_string(raw)
-        except Exception:
-            _agent_keypair = Keypair.from_bytes(base58.b58decode(raw))
-    return _agent_keypair
-
-
-# ── HTTP helpers ──────────────────────────────────────────────────────────────
-
-def _sort_json_keys(v):
-    if isinstance(v, dict):
-        return {k: _sort_json_keys(vv) for k, vv in sorted(v.items())}
-    if isinstance(v, list):
-        return [_sort_json_keys(i) for i in v]
-    return v
-
-
-def _sign_payload(op: str, data: dict) -> dict:
-    main_kp = _get_keypair()
-
-    if AGENT_PRIVATE_KEY and AGENT_PUBLIC_KEY:
-        signing_kp   = _get_agent_keypair()
-        agent_wallet = AGENT_PUBLIC_KEY.strip()
-    else:
-        signing_kp   = main_kp
-        agent_wallet = None
-
-    ts  = int(time.time() * 1_000)
-    ew  = 5_000
-    msg = json.dumps(
-        _sort_json_keys({
-            "timestamp":     ts,
-            "expiry_window": ew,
-            "type":          op,
-            "data":          data,
-        }),
-        separators=(",", ":"),
-    ).encode()
-
-    sig = base58.b58encode(bytes(signing_kp.sign_message(msg))).decode()
+    # Get token holdings from persisted positions
+    token_holdings = []
+    for symbol, pos in _open_positions.items():
+        token_address = pos.get("address")
+        if token_address:
+            balance = fm.get_token_balance(token_address, WALLET_ADDRESS)
+            if balance > 0:
+                token_holdings.append({
+                    "symbol": symbol,
+                    "address": token_address,
+                    "amount": balance,
+                    "entry_price_usd": pos.get("entry_price_usd", 0),
+                })
 
     return {
-        "account":       str(main_kp.pubkey()),
-        "agent_wallet":  agent_wallet,
-        "signature":     sig,
-        "timestamp":     ts,
-        "expiry_window": ew,
+        "bnb_balance":      bnb_balance,
+        "token_holdings":   token_holdings,
     }
 
 
-def _headers() -> dict:
-    h = {"Content-Type": "application/json"}
-    k = os.getenv("PACIFICA_API_KEY", "")
-    if k: h["PF-API-KEY"] = k
-    return h
+# ── Position Management ───────────────────────────────────────────────────────
 
-
-
-def _post(path: str, op: str, data: dict, retries: int = 3) -> dict:
-    body = {**_sign_payload(op, data), **data}
-    for attempt in range(retries):
-        try:
-            r = requests.post(
-                f"{BASE_URL}{path}", json=body, headers=_headers(), timeout=15
-            )
-            # Print full response body on failure so we can see the real error
-            if not r.ok:
-                print(f"[Executor] Error response body: {r.text}")
-            r.raise_for_status()
-            return r.json()
-        except requests.exceptions.HTTPError as e:
-            wait = 2 ** attempt
-            print(f"[Executor] POST {path} attempt {attempt+1}/{retries} failed: {e}. Waiting {wait}s...")
-            time.sleep(wait)
-        except Exception as e:
-            wait = 2 ** attempt
-            print(f"[Executor] POST {path} attempt {attempt+1}/{retries} failed: {e}. Waiting {wait}s...")
-            time.sleep(wait)
-    raise RuntimeError(f"[Executor] {path} failed after {retries} retries")
-
-
-def _get_api(path: str, wallet_address: str, params: dict = None, retries: int = 3) -> dict:
-    merged = {"account": wallet_address, **(params or {})}
-    for attempt in range(retries):
-        try:
-            r = requests.get(
-                f"{BASE_URL}{path}", params=merged, headers=_headers(), timeout=10
-            )
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            wait = 2 ** attempt
-            print(f"[Executor] GET {path} attempt {attempt+1}/{retries} failed: {e}. Waiting {wait}s...")
-            time.sleep(wait)
-    return {}
-
-
-# ── Account / position queries ────────────────────────────────────────────────
-
-def get_account_info(wallet_address: str) -> dict:
-    raw = _get_api("/account", wallet_address)
-    return raw.get("data", raw)
-
-
-def get_open_positions(wallet_address: str) -> dict:
+def get_open_positions() -> dict:
     """
-    Fetches live positions from Pacifica /positions endpoint and merges with
-    persisted state so trailing high-water marks survive across multiple API calls.
+    Get all open positions (from persisted state).
+    For 4.meme, we track token holdings, not perpetual positions.
     """
-    global _open_positions
-    try:
-        # Fetch from dedicated /positions endpoint (not nested in /account)
-        raw = _get_api("/positions", wallet_address)
-        positions = raw.get("data", []) or []
-        live      = {}
-        for p in positions:
-            sym  = p.get("symbol", "")
-            # Pacifica uses "amount" field, not "size"
-            amount = float(p.get("amount", 0) or 0)
-            side   = p.get("side", "")
-            if amount > 0:
-                persisted = _open_positions.get(sym, {})
-                live[sym] = {
-                    "side":           side,  # "bid" or "ask"
-                    "size":           amount,
-                    "entry_price":    float(p.get("entry_price", 0) or 0),
-                    "unrealized_pnl": 0.0,  # Not returned by API
-                    "mark_price":     float(p.get("mark_price", 0) or 0),
-                    # Preserve trailing marks from persisted state — crucial for trailing stops
-                    "trailing_high":  persisted.get("trailing_high"),
-                    "trailing_low":   persisted.get("trailing_low"),
-                    "entry_time":     persisted.get("entry_time", time.time()),
-                }
-        _open_positions = live
-        _save_positions()
-        return live
-    except Exception as e:
-        print(f"[Executor] Could not fetch live positions: {e}")
-        return _open_positions
+    return _open_positions.copy()
 
 
-# ── Trailing stop update ──────────────────────────────────────────────────────
+def has_position(symbol: str) -> bool:
+    """Check if we have an open position for a token."""
+    return symbol in _open_positions
 
-def _update_trailing_mark(symbol: str, current_price: float):
+
+def get_position(symbol: str) -> dict:
+    """Get position details for a token."""
+    return _open_positions.get(symbol, {})
+
+
+def compute_pnl(symbol: str, current_price_usd: float) -> float:
     """
-    Called once per cycle BEFORE should_exit.
-    Long:  trailing_high climbs with the price, never resets down.
-    Short: trailing_low  falls with the price, never resets up.
+    Calculate unrealized PnL for a position.
     """
     pos = _open_positions.get(symbol)
     if not pos:
-        return
+        return 0.0
 
-    changed = False
-    if pos["side"] == "bid":
-        prev = pos.get("trailing_high") or pos["entry_price"]
-        if current_price > prev:
-            _open_positions[symbol]["trailing_high"] = current_price
-            changed = True
-    else:
-        prev = pos.get("trailing_low") or pos["entry_price"]
-        if current_price < prev:
-            _open_positions[symbol]["trailing_low"] = current_price
-            changed = True
+    entry_price = pos.get("entry_price_usd", 0)
+    amount = pos.get("amount", 0)
 
-    if changed:
-        _save_positions()
+    if entry_price <= 0 or amount <= 0:
+        return 0.0
 
-
-# ── Risk checks ───────────────────────────────────────────────────────────────
-
-def compute_pnl(symbol: str, current_price: float) -> float | None:
-    pos = _open_positions.get(symbol)
-    if not pos or pos["entry_price"] == 0:
-        return None
-    entry = pos["entry_price"]
-    size  = pos["size"]
-    if pos["side"] == "bid":
-        return round((current_price - entry) / entry * size, 4)
-    return round((entry - current_price) / entry * size, 4)
+    # PnL = (current - entry) * amount
+    pnl = (current_price_usd - entry_price) * amount
+    return round(pnl, 4)
 
 
 def should_exit(
     symbol: str,
-    current_price: float,
+    current_price_usd: float,
     stop_loss_pct: float,
     take_profit_pct: float,
-) -> tuple[bool, str]:
+) -> tuple:
     """
-    Trailing stop-loss + fixed take-profit.
-
-    Long example:
-      entry=$100, price peaks at $110, stop_loss_pct=3
-      → trailing floor = $110 * (1 - 0.03) = $106.70
-      → exit triggered if price falls to or below $106.70
-      → NOT triggered if price merely dips -4% from entry to $96 then recovers
-
-    Short example (mirrored):
-      entry=$100, price troughs at $90, stop_loss_pct=3
-      → trailing ceiling = $90 * (1 + 0.03) = $92.70
-      → exit triggered if price rises to or above $92.70
+    Check if position should be exited based on stop-loss/take-profit.
+    For 4.meme, we use simple percentage-based exits (not trailing for now).
     """
     pos = _open_positions.get(symbol)
-    if not pos or pos["entry_price"] == 0:
+    if not pos or pos.get("entry_price_usd", 0) <= 0:
         return False, ""
 
-    # Advance the trailing mark before checking
-    _update_trailing_mark(symbol, current_price)
-    pos = _open_positions[symbol]  # re-read after update
+    entry_price = pos["entry_price_usd"]
+    pnl_pct = ((current_price_usd - entry_price) / entry_price) * 100
 
-    entry = pos["entry_price"]
+    # Check stop-loss
+    if pnl_pct <= -stop_loss_pct:
+        return True, f"stop-loss ({pnl_pct:.1f}% <= -{stop_loss_pct}%)"
 
-    if pos["side"] == "bid":
-        trail_ref   = pos.get("trailing_high") or entry
-        trail_floor = trail_ref * (1 - stop_loss_pct / 100)
-        entry_chg   = (current_price - entry) / entry * 100
-
-        if current_price <= trail_floor:
-            locked = (trail_ref - entry) / entry * 100
-            return True, (
-                f"trailing-stop ${trail_floor:,.2f} "
-                f"(peaked +{locked:.1f}%, now {entry_chg:.1f}% from entry)"
-            )
-        if entry_chg >= take_profit_pct:
-            return True, f"take-profit +{entry_chg:.2f}%"
-
-    else:  # short
-        trail_ref  = pos.get("trailing_low") or entry
-        trail_ceil = trail_ref * (1 + stop_loss_pct / 100)
-        entry_chg  = (entry - current_price) / entry * 100
-
-        if current_price >= trail_ceil:
-            locked = (entry - trail_ref) / entry * 100
-            return True, (
-                f"trailing-stop ${trail_ceil:,.2f} "
-                f"(peaked +{locked:.1f}%, now {entry_chg:.1f}% from entry)"
-            )
-        if entry_chg >= take_profit_pct:
-            return True, f"take-profit +{entry_chg:.2f}%"
+    # Check take-profit
+    if pnl_pct >= take_profit_pct:
+        return True, f"take-profit ({pnl_pct:.1f}% >= {take_profit_pct}%)"
 
     return False, ""
 
 
-# ── Order placement ───────────────────────────────────────────────────────────
+# ── Trade Execution ───────────────────────────────────────────────────────────
 
-def place_market_order(
+def execute_buy(
     symbol: str,
-    side: str,
-    usdc_size: float,
-    max_position_usdc: float,
-    available_balance: float | None = None,
-     mark_price: float | None = None,
+    token_address: str,
+    bnb_amount: float,
+    max_position_bnb: float,
+    slippage_pct: float = 1.0,
 ) -> dict:
     """
-    Dynamic balance-aware sizing:
-      1. Cap at max_position_usdc (user config limit)
-      2. Cap at 90% of available_balance (don't exhaust free collateral)
-      3. Reject if resulting size < $10 (minimum order)
+    Execute a BUY order for a 4.meme token.
     """
-    if symbol in _open_positions:
-        pos = _open_positions[symbol]
-        print(f"[Executor] Skipping {symbol}: already have {pos['side']} position (size={pos['size']:.2f})")
+    # Check if we already have a position
+    if has_position(symbol):
+        print(f"[Executor] Skipping {symbol}: already have position")
         return {"skipped": True, "reason": "existing_position", "symbol": symbol}
 
-    # Cap 1: configured max
-    capped = min(usdc_size, max_position_usdc)
+    # Cap position size
+    capped_bnb = min(bnb_amount, max_position_bnb)
 
-    # Cap 2: 90% of free collateral
-    if available_balance is not None:
-        balance_cap = available_balance * 0.9
-        if balance_cap < capped:
-            print(
-                f"[Executor] {symbol}: sizing down ${capped:.2f} → ${balance_cap:.2f} "
-                f"(90% of ${available_balance:.2f} available balance)"
-            )
-            capped = balance_cap
+    # Check wallet balance
+    wallet = get_wallet_context()
+    if wallet["bnb_balance"] < capped_bnb * 0.9:
+        print(f"[Executor] Insufficient BNB: have {wallet['bnb_balance']:.4f}, need {capped_bnb * 0.9:.4f}")
+        return {"skipped": True, "reason": "insufficient_balance", "symbol": symbol}
 
-    # Cap 3: minimum order guard — never silently fail
-    if capped < 10.0:
-        # reason = (
-        #     f"order size ${capped:.2f} below $10 minimum "
-        #     f"(available: ${available_balance:.2f})" if available_balance is not None
-        #     else f"order size ${capped:.2f} below $10 minimum"
-        # )
-        print(f"[Executor] {symbol}: {reason} — skipping")
-        return {"skipped": True, "reason": "insufficient_balance", "symbol": symbol, "size_attempted": capped}
-
-    
-    info     = _get_market_info(symbol)
-    lot_size = info["lot_size"]
-
-    # Convert USDC → coin amount using mark price
-    price = mark_price or 1.0
-    try:
-        coin_amount = _usdc_to_coin_amount(capped, price, lot_size)
-    except Exception as e:
-        print(f"[Executor] Amount conversion failed for {symbol}: {e} — skipping")
-        return {"skipped": True, "reason": f"amount_conversion_failed: {e}", "symbol": symbol}
-
-    # Validate minimum coin amount translates to at least $10
-    coin_float = float(coin_amount)
-    if coin_float * price < 10.0:
-        print(f"[Executor] {symbol}: {coin_amount} coins × ${price:.4f} = ${coin_float*price:.2f} < $10 min — skipping")
-        return {"skipped": True, "reason": "below_min_order_value", "symbol": symbol}
-
-    cid   = str(uuid.uuid4())
-    order = {
-        "symbol":           symbol,
-        "side":             side,
-        "amount":           coin_amount,  # Use coin quantity, not USDC
-        "slippage_percent": str(ORDER_SLIPPAGE_PCT),
-        "reduce_only":      False,
-        "client_order_id":  cid,
-    }
+    # Minimum order check
+    if capped_bnb < 0.001:  # ~0.6 USD at current BNB price
+        print(f"[Executor] Order too small: {capped_bnb:.4f} BNB")
+        return {"skipped": True, "reason": "below_min_order", "symbol": symbol}
 
     if DRY_RUN:
-        print(f"[DRY RUN] Would place {side.upper()} {symbol} ${capped:.2f}")
+        print(f"[DRY RUN] Would buy {symbol} with {capped_bnb:.4f} BNB")
+        # Estimate tokens for dry run display
+        estimate = fm.estimate_buy_tokens(token_address, capped_bnb)
+        expected_tokens = estimate.get("expected_tokens", 0)
+        decimals = fm._get_token_decimals(token_address)
+        token_display = expected_tokens / (10 ** decimals)
+
         return {
-            "dry_run": True, "client_order_id": cid,
-            "symbol": symbol, "side": side,
-            "amount": capped, "status": "simulated",
+            "dry_run": True,
+            "symbol": symbol,
+            "token_address": token_address,
+            "bnb_spent": capped_bnb,
+            "expected_tokens": token_display,
+            "status": "simulated",
         }
 
-    return _post("/orders/create_market", "create_market_order", order)
+    # Execute real buy
+    result = fm.buy_token(
+        token_address=token_address,
+        bnb_amount=capped_bnb,
+        slippage_pct=slippage_pct,
+    )
 
-
-def close_position(symbol: str, reason: str = "") -> dict:
-    pos = _open_positions.get(symbol)
-    if not pos:
-        return {"skipped": True, "reason": "no_position"}
-
-    close_side = "ask" if pos["side"] == "bid" else "bid"
-    order = {
-        "symbol":           symbol,
-        "side":             close_side,
-        "amount":           str(round(pos["size"], 4)),
-        "slippage_percent": str(ORDER_SLIPPAGE_PCT),
-        "reduce_only":      True,
-        "client_order_id":  str(uuid.uuid4()),
-    }
-
-    if reason:
-        print(f"[Executor] Closing {symbol}: {reason}")
-
-    if DRY_RUN:
-        print(f"[DRY RUN] Would close {symbol} {close_side}")
-        _open_positions.pop(symbol, None)
+    if result.get("success"):
+        # Record position
+        token_info = fm.get_token_by_address(token_address)
+        _open_positions[symbol] = {
+            "symbol": symbol,
+            "address": token_address,
+            "side": "long",  # Always long for spot
+            "amount": result.get("tokens_received", 0) / 1e18,  # Approximate
+            "entry_price_usd": token_info.get("price_usd", 0),
+            "entry_bnb": capped_bnb,
+            "entry_time": time.time(),
+        }
         _save_positions()
-        return {"dry_run": True, "status": "simulated_close", "symbol": symbol, "reason": reason}
 
-    result = _post("/orders/create_market", "create_market_order", order)
-    _open_positions.pop(symbol, None)
-    _save_positions()
+        print(f"[Executor] Bought {symbol}: {capped_bnb:.4f} BNB → {result.get('tokens_received', 0)} tokens")
+
     return result
 
 
-def record_entry(symbol: str, side: str, entry_price: float, size: float):
-    _open_positions[symbol] = {
-        "side":          side,
-        "entry_price":   entry_price,
-        "size":          size,
-        "entry_time":    time.time(),
-        # Initialise trailing marks at entry so the first update can only improve them
-        "trailing_high": entry_price if side == "bid" else None,
-        "trailing_low":  entry_price if side == "ask" else None,
+def execute_sell(
+    symbol: str,
+    token_amount: float = None,  # None = sell all
+    slippage_pct: float = 1.0,
+    reason: str = "",
+) -> dict:
+    """
+    Execute a SELL order for a 4.meme token.
+    """
+    pos = _open_positions.get(symbol)
+    if not pos:
+        print(f"[Executor] No position for {symbol}")
+        return {"skipped": True, "reason": "no_position"}
+
+    token_address = pos["address"]
+    sell_amount = token_amount
+
+    # If no amount specified, sell entire balance
+    if sell_amount is None:
+        sell_amount = fm.get_token_balance(token_address, WALLET_ADDRESS)
+        print(f"[Executor] Selling entire {symbol} balance: {sell_amount:.4f} tokens")
+
+    if sell_amount <= 0:
+        print(f"[Executor] No {symbol} tokens to sell")
+        _open_positions.pop(symbol, None)
+        _save_positions()
+        return {"skipped": True, "reason": "zero_balance"}
+
+    if DRY_RUN:
+        print(f"[DRY RUN] Would sell {sell_amount:.4f} {symbol} tokens")
+        estimate = fm.estimate_sell_bnb(token_address, sell_amount)
+        expected_bnb = estimate.get("expected_bnb", 0) if not estimate.get("error") else 0
+
+        _open_positions.pop(symbol, None)
+        _save_positions()
+
+        return {
+            "dry_run": True,
+            "symbol": symbol,
+            "tokens_sold": sell_amount,
+            "expected_bnb": expected_bnb,
+            "reason": reason,
+            "status": "simulated",
+        }
+
+    # Execute real sell
+    result = fm.sell_token(
+        token_address=token_address,
+        token_amount=sell_amount,
+        slippage_pct=slippage_pct,
+    )
+
+    if result.get("success"):
+        _open_positions.pop(symbol, None)
+        _save_positions()
+
+        print(f"[Executor] Sold {symbol}: {sell_amount:.4f} tokens → {result.get('bnb_received', 0):.6f} BNB")
+
+    return result
+
+
+def close_position(symbol: str, reason: str = "") -> dict:
+    """
+    Close an existing position (sell all tokens).
+    """
+    return execute_sell(symbol, token_amount=None, reason=reason)
+
+
+# ── TradeLogger Integration ───────────────────────────────────────────────────
+
+def log_decision_to_chain(
+    decision: dict,
+    market: dict,
+    sentiment: dict,
+    pnl_usdc: float = 0,
+) -> dict:
+    """
+    Log trading decision to TradeLogger contract on BSC.
+    Only logs HOLD/BUY/SELL decisions (not internal errors).
+    """
+    if DRY_RUN:
+        print(f"[DRY RUN] Would log decision to chain: {decision['action']} {decision['symbol']}")
+        return {"dry_run": True, "status": "simulated"}
+
+    try:
+        wallet = fm._get_wallet()
+
+        # Prepare arguments
+        token_symbol = str(decision.get("symbol", "UNKNOWN"))[:32]
+        token_address = decision.get("address", market.get("address", ""))
+        action = str(decision.get("action", "HOLD"))[:16]
+        price_wei = int(market.get("price_usd", 0) * 1e10)  # Scale USD to wei-like
+        pnl_wei = int(pnl_usdc * 1e6)  # Scale to micro-USD
+        confidence = int(min(decision.get("confidence", 0) * 100, 100))
+        bonding_pct = int(min(market.get("bonding_curve_pct", 0), 100))
+        social_score = int(min(sentiment.get("sentiment_score", 0) * 1000, 1000))
+        mention_count = int(min(sentiment.get("mention_count", 0), 65535))
+        holder_count = int(min(market.get("holder_count", 0), 65535))
+        is_trending = bool(market.get("is_trending_4meme") or sentiment.get("trending_score", 0) > 50)
+        reasoning = str(decision.get("reasoning", ""))[:500]  # Truncate for gas
+
+        # Build transaction
+        tx = trade_logger.functions.logDecision(
+            tokenSymbol=token_symbol,
+            tokenAddress=token_address,
+            action=action,
+            priceInWei=price_wei,
+            pnlUsdc=pnl_wei,
+            confidence=confidence,
+            bondingCurvePct=bonding_pct,
+            socialScore=social_score,
+            mentionCount=mention_count,
+            holderCount=holder_count,
+            isTrending=is_trending,
+            reasoning=reasoning,
+            dryRun=DRY_RUN,
+        ).build_transaction({
+            "from": wallet.address,
+            "nonce": web3.eth.get_transaction_count(wallet.address),
+            "gasPrice": web3.eth.gas_price,
+        })
+
+        # Sign and send
+        signed = wallet.sign_transaction(tx)
+        tx_hash = web3.eth.send_raw_transaction(signed.raw_transaction)
+
+        # Wait for confirmation
+        receipt = web3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+        if receipt["status"] == 1:
+            return {
+                "success": True,
+                "tx_hash": tx_hash.hex(),
+                "symbol": token_symbol,
+                "action": action,
+            }
+        else:
+            return {"success": False, "error": "Transaction reverted", "tx_hash": tx_hash.hex()}
+
+    except Exception as e:
+        print(f"[Executor] Failed to log decision to chain: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ── Account Info ──────────────────────────────────────────────────────────────
+
+def get_account_info() -> dict:
+    """
+    Get wallet account summary.
+    """
+    if not WALLET_ADDRESS:
+        return {
+            "bnb_balance": 0.0,
+            "token_holdings": [],
+            "open_positions": 0,
+        }
+
+    context = get_wallet_context()
+    positions = get_open_positions()
+
+    return {
+        "address":          WALLET_ADDRESS,
+        "bnb_balance":      context["bnb_balance"],
+        "token_holdings":   context["token_holdings"],
+        "open_positions":   len(positions),
+        "position_symbols": list(positions.keys()),
     }
-    _save_positions()

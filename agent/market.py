@@ -1,43 +1,43 @@
 """
-market.py — Market data with multi-timeframe RSI, signal pre-computation, and basis spread.
+market.py — 4.meme memecoin market data with bonding curve analysis.
 
-Improvements over v1:
-  - RSI converted to human-readable signal: "oversold" / "neutral" / "overbought"
-    before being passed to strategy — Gemini no longer sees raw nulls
-  - Basis spread: Pacifica mark vs Binance spot cross-checked each cycle
-    >2% divergence is flagged as a standalone signal
-  - Circuit breaker, exponential backoff, and Binance fallback unchanged
+Replaces Pacifica-specific data with 4.meme memecoin metrics:
+  - Bonding curve progress (0-100% to graduation)
+  - Holder concentration (rug risk indicator)
+  - Launch age, liquidity, volume
+  - Buy/sell pressure (1h trade counts)
+  - Social sentiment integration (Elfa AI)
 """
 
 from __future__ import annotations
-import asyncio, json, os, time
+import os, time
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Any, Optional
-import requests, websockets
+from typing import Optional
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
-BASE_URL    = os.getenv("PACIFICA_BASE_URL", "https://test-api.pacifica.fi/api/v1")
-WS_URL      = os.getenv("PACIFICA_WS_URL",   "wss://test-ws.pacifica.fi/ws")
-API_KEY     = os.getenv("PACIFICA_API_KEY",   "") or os.getenv("PF_API_KEY", "")
-USE_BINANCE = os.getenv("USE_BINANCE_KLINE_FALLBACK", "true").lower() == "true"
+import four_meme as fm
 
-MIN_CANDLES      = 15
+# ── Configuration ─────────────────────────────────────────────────────────────
+
+# Bonding curve interpretation thresholds
+EARLY_STAGE_PCT    = 30.0   # 0-30%: early stage, high risk/reward
+MID_STAGE_PCT      = 70.0   # 30-70%: momentum phase, best buy window
+LATE_STAGE_PCT     = 90.0   # 70-95%: late stage, graduation pump
+GRADUATION_PCT     = 100.0  # 100%: graduated to PancakeSwap
+
+# Rug risk thresholds
+TOP10_HIGH_RISK_PCT    = 60.0  # Top 10 holders >60% = HIGH risk
+TOP10_MEDIUM_RISK_PCT  = 40.0  # Top 10 holders >40% = MEDIUM risk
+
+# Liquidity thresholds
+MIN_LIQUIDITY_USD  = 3000.0   # Below this = risky
+MIN_VOLUME_24H_USD = 10000.0  # Below this = low activity
+
+# Circuit breaker for API failures
 CIRCUIT_THRESH   = 5
 CIRCUIT_COOLDOWN = 2
-BASIS_ALERT_PCT  = 2.0   # flag if Pacifica/Binance price diverges more than this %
-
-_SESSION = requests.Session()
-_SESSION.headers.update({"Accept": "application/json", "User-Agent": "PacificaPilot/1.0"})
-if API_KEY:
-    _SESSION.headers["PF-API-KEY"] = API_KEY
-
-_INTERVAL_MS = {
-    "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000,
-    "30m": 1_800_000, "1h": 3_600_000, "2h": 7_200_000,
-    "4h": 14_400_000, "1d": 86_400_000,
-}
 
 _fail_counts: dict[str, int] = {}
 _skip_cycles: dict[str, int] = {}
@@ -65,297 +65,284 @@ def _record_ok(key: str):
     _fail_counts[key] = 0
 
 
-# ── REST / WS helpers ─────────────────────────────────────────────────────────
+# ── Signal Computation ────────────────────────────────────────────────────────
 
-def _rest_ok(resp: requests.Response) -> bool:
-    if resp.status_code != 200:
-        return False
-    ct = (resp.headers.get("content-type") or "").lower()
-    return "json" in ct and bool(resp.text.strip())
-
-
-def _get(path: str, params: dict | None = None) -> Any | None:
-    url = f"{BASE_URL}{path}"
-    try:
-        resp = _SESSION.get(url, params=params, timeout=15)
-        if _rest_ok(resp):
-            return resp.json()
-    except Exception:
-        pass
-    return None
-
-
-async def _ws_fetch_price(symbol: str, timeout: float = 25.0) -> dict:
-    want = symbol.upper()
-    t0   = time.time()
-    try:
-        async with websockets.connect(WS_URL, ping_interval=30) as ws:
-            await ws.send(json.dumps({"method": "subscribe", "params": {"source": "prices"}}))
-            while time.time() - t0 < timeout:
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                    msg = json.loads(raw)
-                    if msg.get("channel") == "prices":
-                        for item in (msg.get("data") or []):
-                            if isinstance(item, dict) and str(item.get("symbol", "")).upper() == want:
-                                return item
-                except (asyncio.TimeoutError, json.JSONDecodeError):
-                    continue
-    except Exception as e:
-        print(f"[Market] WS failed for {symbol}: {e}")
-    return {}
-
-
-def _ws_sync(symbol: str) -> dict:
-    try:
-        return asyncio.run(_ws_fetch_price(symbol))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(_ws_fetch_price(symbol))
-        finally:
-            loop.close()
-
-
-# ── Price fetching ────────────────────────────────────────────────────────────
-
-def get_prices(symbol: str) -> dict:
-    raw = _get("/info/prices")
-    if raw is not None:
-        items = raw.get("data", []) if isinstance(raw, dict) else raw
-        for item in (items or []):
-            if isinstance(item, dict) and item.get("symbol") == symbol:
-                _record_ok("prices")
-                return item
-    row = _ws_sync(symbol)
-    if row:
-        _record_ok("prices")
-        return row
-    _record_fail("prices")
-    return {}
-
-
-def _binance_spot_price(symbol: str) -> float | None:
-    """Current Binance spot price for basis-spread comparison."""
-    try:
-        pair = f"{symbol.upper()}USDT"
-        r    = requests.get(
-            "https://api.binance.com/api/v3/ticker/price",
-            params={"symbol": pair}, timeout=8,
-        )
-        r.raise_for_status()
-        return float(r.json().get("price", 0) or 0) or None
-    except Exception as e:
-        print(f"[Market] Binance spot price failed for {symbol}: {e}")
-        return None
-
-
-def _binance_candles(symbol: str, interval: str, limit: int) -> list:
-    pair = f"{symbol.upper()}USDT"
-    try:
-        r = requests.get(
-            "https://api.binance.com/api/v3/klines",
-            params={"symbol": pair, "interval": interval, "limit": limit},
-            timeout=15, headers={"Accept": "application/json"},
-        )
-        r.raise_for_status()
-        out = []
-        for k in r.json():
-            if isinstance(k, (list, tuple)) and len(k) >= 6:
-                out.append({"t": k[0], "o": k[1], "h": k[2], "l": k[3], "c": k[4], "v": k[5]})
-        return out
-    except Exception as e:
-        print(f"[Market] Binance candles failed for {symbol}/{interval}: {e}")
-        return []
-
-
-def get_candles(symbol: str, interval: str = "5m", n_candles: int = 60) -> list:
-    key    = f"kline_{symbol}_{interval}"
-    if not _circuit_ok(key):
-        return _binance_candles(symbol, interval, n_candles + 10) if USE_BINANCE else []
-
-    ms     = _INTERVAL_MS.get(interval, 300_000)
-    now_ms = int(time.time() * 1_000)
-    start  = now_ms - (n_candles * 2) * ms
-
-    raw = _get("/kline", params={
-        "symbol": symbol, "interval": interval,
-        "start_time": start, "end_time": now_ms, "limit": n_candles,
-    })
-    if raw is not None:
-        data = raw.get("data", []) if isinstance(raw, dict) else raw
-        if isinstance(data, list) and len(data) >= MIN_CANDLES:
-            _record_ok(key)
-            return data
-        if isinstance(data, list) and data:
-            print(f"[Market] Pacifica returned only {len(data)} candles for {symbol}/{interval} — Binance fallback")
-        else:
-            _record_fail(key)
-
-    if USE_BINANCE:
-        candles = _binance_candles(symbol, interval, n_candles + 10)
-        if candles:
-            print(f"[Market] Using Binance {interval} klines for {symbol}")
-            _record_ok(key)
-        return candles
-    return []
-
-
-# ── Indicator computation ─────────────────────────────────────────────────────
-
-def _closes(candles: list) -> list:
-    out = []
-    for c in candles:
-        if isinstance(c, dict):
-            v = c.get("c") or c.get("close") or c.get("Close")
-            if v is not None:
-                out.append(float(v))
-        elif isinstance(c, (list, tuple)) and len(c) >= 5:
-            out.append(float(c[4]))
-    return out
-
-
-def compute_rsi(closes: list, period: int = 14) -> Optional[float]:
-    if len(closes) < period + 1:
-        return None
-    gains, losses = [], []
-    for i in range(1, len(closes)):
-        d = closes[i] - closes[i - 1]
-        gains.append(max(d, 0.0))
-        losses.append(max(-d, 0.0))
-    ag = sum(gains[-period:]) / period
-    al = sum(losses[-period:]) / period
-    if al == 0:
-        return 100.0
-    return round(100 - (100 / (1 + ag / al)), 2)
-
-
-def rsi_signal(rsi: Optional[float], oversold: float = 35.0, overbought: float = 65.0) -> str:
+def bonding_curve_signal(bonding_curve_pct: float) -> str:
     """
-    Convert a raw RSI value into a plain-English signal label.
-    Returns one of: "oversold", "neutral", "overbought", "unavailable".
-
-    This pre-computed label is what strategy.py passes to Gemini so the LLM
-    never receives a bare null or a bare number without context.
+    Interpret bonding curve progress as a trading signal.
     """
-    if rsi is None:
-        return "unavailable"
-    if rsi <= oversold:
-        return "oversold"
-    if rsi >= overbought:
-        return "overbought"
-    return "neutral"
+    if bonding_curve_pct <= 0:
+        return "not_started"
+    if bonding_curve_pct < EARLY_STAGE_PCT:
+        return "early_stage"       # High risk/reward, watch for momentum
+    if bonding_curve_pct < MID_STAGE_PCT:
+        return "momentum_phase"     # Best buy window if social is strong
+    if bonding_curve_pct < LATE_STAGE_PCT:
+        return "late_stage"         # Graduation pump potential but crowded
+    if bonding_curve_pct < GRADUATION_PCT:
+        return "graduation_soon"    # Near graduation, high volatility
+    return "graduated"              # Different dynamics on PancakeSwap
 
 
-# ── Basis spread ──────────────────────────────────────────────────────────────
-
-def compute_basis_spread(pacifica_mark: float, symbol: str) -> dict:
+def holder_concentration_signal(top10_holder_pct: float) -> str:
     """
-    Cross-check Pacifica mark price against Binance spot.
-    Returns a dict with:
-      binance_spot  : float | None
-      basis_pct     : float | None   (positive = Pacifica premium)
-      basis_signal  : str            ("premium" | "discount" | "normal" | "unavailable")
-      basis_alert   : bool           (True if |spread| > BASIS_ALERT_PCT)
+    Assess rug risk from holder concentration.
     """
-    spot = _binance_spot_price(symbol)
-    if spot is None or spot == 0 or pacifica_mark == 0:
-        return {
-            "binance_spot": spot,
-            "basis_pct":    None,
-            "basis_signal": "unavailable",
-            "basis_alert":  False,
-        }
+    if top10_holder_pct > TOP10_HIGH_RISK_PCT:
+        return "HIGH"
+    if top10_holder_pct > TOP10_MEDIUM_RISK_PCT:
+        return "MEDIUM"
+    return "LOW"
 
-    basis_pct = round((pacifica_mark - spot) / spot * 100, 4)
-    alert     = abs(basis_pct) > BASIS_ALERT_PCT
 
-    if alert:
-        direction = "premium" if basis_pct > 0 else "discount"
-        print(
-            f"[Market] ⚠ Basis alert {symbol}: Pacifica {direction} vs Binance "
-            f"{basis_pct:+.2f}% (mark ${pacifica_mark:,.2f} vs spot ${spot:,.2f})"
-        )
-    else:
-        direction = "normal"
+def buy_sell_pressure_signal(buy_count: int, sell_count: int) -> tuple[str, float]:
+    """
+    Calculate buy/sell pressure ratio.
+    Returns (signal_label, ratio_value)
+    """
+    if sell_count == 0:
+        if buy_count > 0:
+            return("strong_buy_pressure", float('inf'))
+        return "neutral", 1.0
 
+    ratio = buy_count / sell_count
+
+    if ratio >= 3.0:
+        return "strong_buy_pressure", ratio
+    if ratio >= 1.5:
+        return "moderate_buy_pressure", ratio
+    if ratio >= 0.67:
+        return "neutral", ratio
+    if ratio >= 0.33:
+        return "moderate_sell_pressure", ratio
+    return "strong_sell_pressure", ratio
+
+
+def launch_age_signal(launched_min_ago: int) -> str:
+    """
+    Interpret token age for risk assessment.
+    """
+    if launched_min_ago < 15:
+        return "very_new"       # Extremely high risk, sniper territory
+    if launched_min_ago < 60:
+        return "new"            # High risk/reward
+    if launched_min_ago < 360:
+        return "establishing"   # Finding price discovery
+    if launched_min_ago < 1440:
+        return "established"    # More stable
+    return "mature"             # Either dead or proven
+
+
+def liquidity_signal(liquidity_usd: float) -> str:
+    """
+    Assess liquidity adequacy.
+    """
+    if liquidity_usd < 1000:
+        return "critical_low"
+    if liquidity_usd < MIN_LIQUIDITY_USD:
+        return "low"
+    if liquidity_usd < 50000:
+        return "moderate"
+    if liquidity_usd < 200000:
+        return "healthy"
+    return "strong"
+
+
+# ── Main Snapshot ─────────────────────────────────────────────────────────────
+
+def get_market_snapshot(token_address: str) -> dict:
+    """
+    Fetch comprehensive market data for a 4.meme token.
+    Combines API data with on-chain verification.
+    """
+    if not _circuit_ok(f"token_{token_address}"):
+        return {"error": "circuit_open", "address": token_address}
+
+    # 1. Fetch token data from 4.meme API
+    token_data = fm.get_token_by_address(token_address)
+
+    if not token_data or not token_data.get("address"):
+        _record_fail(f"token_{token_address}")
+        return {"error": "token_not_found", "address": token_address}
+
+    _record_ok(f"token_{token_address}")
+
+    # 2. Fetch bonding curve progress from on-chain (more reliable)
+    bc_progress = fm.get_bonding_curve_progress(token_address)
+
+    # 3. Compute signals
+    bonding_signal = bonding_curve_signal(token_data["bonding_curve_pct"])
+    holder_signal = holder_concentration_signal(token_data["top10_holder_pct"])
+    buy_sell_signal, buy_sell_ratio = buy_sell_pressure_signal(
+        token_data["buy_count_1h"],
+        token_data["sell_count_1h"],
+    )
+    age_signal = launch_age_signal(token_data["launched_min_ago"])
+    liq_signal = liquidity_signal(token_data["liquidity_usd"])
+
+    # 4. Get BNB price for context
+    bnb_price = fm.get_bnb_price_usd()
+
+    # 5. Build snapshot dict (matches strategy.py expected format)
     return {
-        "binance_spot": spot,
-        "basis_pct":    basis_pct,
-        "basis_signal": direction,   # "premium" | "discount" | "normal"
-        "basis_alert":  alert,
+        # Token identity
+        "symbol":              token_data["symbol"],
+        "address":             token_data["address"],
+        "name":                token_data["name"],
+
+        # Price & market
+        "price_bnb":           token_data["price_bnb"],
+        "price_usd":           token_data["price_usd"],
+        "market_cap_usd":      token_data["market_cap_usd"],
+        "volume_24h_usd":      token_data["volume_24h_usd"],
+        "liquidity_usd":       token_data["liquidity_usd"],
+
+        # 4.meme launch metrics
+        "launched_min_ago":    token_data["launched_min_ago"],
+        "bonding_curve_pct":   token_data["bonding_curve_pct"],
+        "holder_count":        token_data["holder_count"],
+        "top10_holder_pct":    token_data["top10_holder_pct"],
+        "buy_count_1h":        token_data["buy_count_1h"],
+        "sell_count_1h":       token_data["sell_count_1h"],
+
+        # Computed signals
+        "bonding_signal":      bonding_signal,
+        "holder_signal":       holder_signal,
+        "buy_sell_signal":     buy_sell_signal,
+        "buy_sell_ratio":      buy_sell_ratio,
+        "age_signal":          age_signal,
+        "liquidity_signal":    liq_signal,
+
+        # 4.meme specific flags
+        "version":             token_data["version"],
+        "is_trending_4meme":   token_data["is_trending_4meme"],
+        "trending_rank_4meme": token_data["trending_rank_4meme"],
+        "fee_plan":            token_data["fee_plan"],  # AntiSniperFeeMode
+        "ai_creator":          token_data["ai_creator"],
+        "tax_info":            token_data["tax_info"],
+
+        # Bonding curve details
+        "graduated":           bc_progress.get("graduated", False),
+        "graduation_imminent": bc_progress.get("graduation_imminent", False),
+        "offers_sold":         bc_progress.get("offers_sold", 0),
+        "offers_left":         bc_progress.get("offers_left", 0),
+        "funds_raised_bnb":    bc_progress.get("funds_raised_bnb", 0),
+
+        # Market context
+        "bnb_price_usd":       bnb_price,
+
+        # Rug risk flags (computed)
+        "rug_risk_score": _calculate_rug_risk_score(token_data, bonding_signal, holder_signal, age_signal),
     }
 
 
-# ── Main snapshot ─────────────────────────────────────────────────────────────
+def _calculate_rug_risk_score(token_data: dict, bonding_signal: str, holder_signal: str, age_signal: str) -> int:
+    """
+    Calculate a composite rug risk score (0-100).
+    Higher = more risky.
+    """
+    score = 0
 
-def get_market_snapshot(symbol: str) -> dict:
-    prices = get_prices(symbol)
+    # Holder concentration (max 40 points)
+    if holder_signal == "HIGH":
+        score += 40
+    elif holder_signal == "MEDIUM":
+        score += 20
 
-    # 5m candles (entry timing)
-    candles_5m = get_candles(symbol, interval="5m", n_candles=60)
-    rsi_5m_raw = compute_rsi(_closes(candles_5m))
-    if rsi_5m_raw is None:
-        print(f"[Market] {symbol}: insufficient 5m candles ({len(candles_5m)}) for RSI")
+    # Launch age (max 30 points)
+    if age_signal == "very_new":
+        score += 30
+    elif age_signal == "new":
+        score += 15
 
-    # 1h candles (trend direction)
-    candles_1h = get_candles(symbol, interval="1h", n_candles=30)
-    rsi_1h_raw = compute_rsi(_closes(candles_1h))
+    # Liquidity (max 20 points)
+    if token_data["liquidity_usd"] < 1000:
+        score += 20
+    elif token_data["liquidity_usd"] < 3000:
+        score += 10
 
-    # Pre-computed signal labels — strategy.py uses these, not raw numbers
-    rsi_5m_signal = rsi_signal(rsi_5m_raw)
-    rsi_1h_signal = rsi_signal(rsi_1h_raw)
+    # Bonding curve stage (max 10 points)
+    if bonding_signal == "not_started":
+        score += 10
 
-    # Funding rate
-    funding: Optional[float] = None
-    raw_f = prices.get("funding")
-    if raw_f is not None and str(raw_f).strip() not in ("", "-1"):
+    return min(score, 100)
+
+
+def get_trending_tokens_snapshot(limit: int = 10) -> list:
+    """
+    Fetch market snapshots for trending 4.meme tokens.
+    Returns list of snapshots sorted by trending score.
+    """
+    addresses = fm.get_trending_tokens(limit=limit)
+    snapshots = []
+
+    for addr in addresses:
         try:
-            funding = float(raw_f)
-        except (TypeError, ValueError):
-            pass
-    if funding is None:
+            snapshot = get_market_snapshot(addr)
+            if not snapshot.get("error"):
+                snapshots.append(snapshot)
+        except Exception as e:
+            print(f"[Market] Failed to fetch snapshot for {addr}: {e}")
+
+    return snapshots
+
+
+def get_new_launches_snapshot(limit: int = 10) -> list:
+    """
+    Fetch market snapshots for newly launched tokens.
+    Returns list of snapshots sorted by launch time (newest first).
+    """
+    addresses = fm.get_new_launches(limit=limit)
+    snapshots = []
+
+    for addr in addresses:
         try:
-            fh = _get("/funding_rate/history", params={"symbol": symbol, "limit": 1})
-            if fh:
-                items = fh.get("data", []) if isinstance(fh, dict) else fh
-                if items:
-                    funding = float(items[0].get("funding_rate", 0))
-        except Exception:
-            pass
+            snapshot = get_market_snapshot(addr)
+            if not snapshot.get("error"):
+                snapshots.append(snapshot)
+        except Exception as e:
+            print(f"[Market] Failed to fetch snapshot for {addr}: {e}")
 
-    try:
-        mark = float(prices.get("mark", 0) or 0)
-    except (TypeError, ValueError):
-        mark = 0.0
-    try:
-        y         = prices.get("yesterday_price", 0)
-        yesterday = float(y) if y not in (None, "", "-1") else 0.0
-    except (TypeError, ValueError):
-        yesterday = 0.0
+    return snapshots
 
-    change_24h = round((mark - yesterday) / yesterday * 100, 4) if yesterday > 0 else 0.0
 
-    # Basis spread — cross-check Pacifica mark vs Binance spot
-    basis = compute_basis_spread(mark, symbol)
+def scan_for_opportunities(
+    min_liquidity: float = 5000,
+    max_rug_risk: int = 50,
+    bonding_curve_range: tuple = (20, 80),
+) -> list:
+    """
+    Scan trending tokens for trading opportunities based on filters.
 
-    return {
-        "symbol":       symbol,
-        "mark_price":   mark,
-        "index_price":  float(prices.get("oracle", 0) or 0),
-        "change_24h":   change_24h,
-        "volume_24h":   float(prices.get("volume_24h", 0) or 0),
-        # Raw RSI values (for logging and fallback rule engine)
-        "rsi_14":       rsi_5m_raw,
-        "rsi_1h":       rsi_1h_raw,
-        # Pre-computed signal labels (for Gemini prompt — never null)
-        "rsi_5m_signal": rsi_5m_signal,
-        "rsi_1h_signal": rsi_1h_signal,
-        "candles":       candles_5m,
-        "funding_rate":  funding if funding is not None else 0.0,
-        # Basis spread cross-check
-        "binance_spot":  basis["binance_spot"],
-        "basis_pct":     basis["basis_pct"],
-        "basis_signal":  basis["basis_signal"],
-        "basis_alert":   basis["basis_alert"],
-    }
+    Args:
+        min_liquidity: Minimum liquidity in USD
+        max_rug_risk: Maximum acceptable rug risk score (0-100)
+        bonding_curve_range: (min_pct, max_pct) for bonding curve filter
+
+    Returns:
+        List of token snapshots matching criteria
+    """
+    snapshots = get_trending_tokens_snapshot(limit=20)
+    opportunities = []
+
+    for s in snapshots:
+        # Filter by liquidity
+        if s.get("liquidity_usd", 0) < min_liquidity:
+            continue
+
+        # Filter by rug risk
+        if s.get("rug_risk_score", 100) > max_rug_risk:
+            continue
+
+        # Filter by bonding curve stage
+        bc_pct = s.get("bonding_curve_pct", 0)
+        if bc_pct < bonding_curve_range[0] or bc_pct > bonding_curve_range[1]:
+            continue
+
+        # Filter out graduated tokens (different dynamics)
+        if s.get("graduated", False):
+            continue
+
+        opportunities.append(s)
+
+    return opportunities

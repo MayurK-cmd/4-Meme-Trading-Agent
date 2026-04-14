@@ -1,6 +1,8 @@
 """
-logger.py — Posts decisions + PnL to backend. Streams every log line to /api/logs.
-Falls back to local file when backend is down.
+logger.py — Posts 4.meme trading decisions to backend.
+
+Streams every log line to /api/logs. Falls back to local file when backend is down.
+Logs BUY/SELL/HOLD decisions with 4.meme-specific metrics.
 """
 
 import json, os, sys, requests
@@ -76,31 +78,40 @@ def _save_fallback(trades: list):
         push_log(f"[Logger] File fallback failed: {e}")
 
 
-def log_decision(decision: dict, market: dict, sentiment: dict,
-                 order_result: dict = None, pnl_usdc: float = None):
+def log_decision(
+    decision: dict,
+    market: dict,
+    sentiment: dict,
+    order_result: dict = None,
+    pnl_usdc: float = None,
+):
+    """Log a trading decision to backend (or file fallback)."""
     global USER_ID
     if not USER_ID:
         USER_ID = _fetch_user_id()
+
     payload = {
-        "userId":          USER_ID,
-        "symbol":          decision["symbol"],
-        "action":          decision["action"],
-        "confidence":      decision["confidence"],
-        "reasoning":       decision["reasoning"],
-        "size_pct":        decision.get("size_pct", 0),
-        "mark_price":      decision.get("mark_price", market.get("mark_price")),
-        "rsi_14":          market.get("rsi_14"),
-        "rsi_1h":          market.get("rsi_1h"),
-        "funding_rate":    market.get("funding_rate"),
-        "change_24h":      market.get("change_24h"),
-        "sentiment_score": sentiment.get("sentiment_score"),
-        "mention_count":   sentiment.get("mention_count"),
-        "trending_score":  sentiment.get("trending_score"),
-        "order":           order_result,
-        "dry_run":         DRY_RUN,
-        "pnl_usdc":        pnl_usdc,
-        "open_position":   market.get("open_position"),
-        "unrealized_pnl":  market.get("unrealized_pnl"),
+        "userId":           USER_ID,
+        "symbol":           decision["symbol"],
+        "token_address":    decision.get("address", market.get("address", "")),
+        "action":           decision["action"],
+        "confidence":       decision["confidence"],
+        "reasoning":        decision["reasoning"],
+        "size_pct":         decision.get("size_pct", 0),
+        "price_usd":        decision.get("price_usd", market.get("price_usd")),
+        # 4.meme specific metrics
+        "bonding_curve_pct": market.get("bonding_curve_pct"),
+        "liquidity_usd":     market.get("liquidity_usd"),
+        "holder_count":      market.get("holder_count"),
+        "rug_risk_score":    market.get("rug_risk_score"),
+        # Sentiment
+        "sentiment_score":   sentiment.get("sentiment_score"),
+        "mention_count":     sentiment.get("mention_count"),
+        "trending_score":    sentiment.get("trending_score"),
+        # Order result
+        "order":            order_result,
+        "dry_run":          DRY_RUN,
+        "pnl_usdc":         pnl_usdc,
     }
 
     posted = False
@@ -119,19 +130,29 @@ def log_decision(decision: dict, market: dict, sentiment: dict,
         trades.insert(0, {**payload, "timestamp": datetime.now(timezone.utc).isoformat()})
         _save_fallback(trades)
 
-    ac    = {"LONG":"[LONG ]","SHORT":"[SHORT]","HOLD":"[HOLD ]","EXIT":"[EXIT ]"}.get(decision["action"], "[?]")
-    rsi   = f"{market.get('rsi_14'):.2f}" if market.get("rsi_14") is not None else "N/A"
+    # Format log line
+    ac = {
+        "BUY":  "[BUY ]",
+        "SELL": "[SELL]",
+        "HOLD": "[HOLD]",
+    }.get(decision["action"], "[?]")
+
     pnl_s = f"PnL: ${pnl_usdc:.4f}" if pnl_usdc is not None else ""
+    bc = f"BC: {market.get('bonding_curve_pct', 0):.1f}%"
+    liq = f"Liq: ${market.get('liquidity_usd', 0):,.0f}"
+
     push_log(
-        f"{ac}  {decision['symbol']} @ ${decision.get('mark_price',0):,.2f}  "
-        f"RSI: {rsi}  Eng: {sentiment.get('sentiment_score',0):.2f}  "
+        f"{ac}  {decision['symbol']} @ ${decision.get('price_usd', 0):.8f}  "
+        f"Conf: {decision['confidence']:.0%}  {bc}  {liq}  "
         f"{pnl_s}  {'OK' if posted else 'FALLBACK'}"
     )
     push_log(f"  {decision['reasoning'][:150]}")
+
     return payload
 
 
 def send_heartbeat(symbol: str = None, error: str = None):
+    """Send heartbeat to backend to show agent is alive."""
     global _cycles
     _cycles += 1
     try:
@@ -146,6 +167,7 @@ def send_heartbeat(symbol: str = None, error: str = None):
 
 
 def get_recent_trades(limit: int = 50) -> list:
+    """Fetch recent trades from backend or file fallback."""
     try:
         r = requests.get(f"{BACKEND_URL}/api/trades", params={"limit": limit}, timeout=5)
         r.raise_for_status()
