@@ -51,23 +51,72 @@ def fetch_config() -> dict | None:
             timeout=5,
         )
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+
+        # Check if backend returned a valid config with enabled flag
+        if data and "enabled" in data:
+            if data.get("enabled") is False:
+                log.push_log("[Config] Agent disabled by user in frontend settings")
+            else:
+                log.push_log("[Config] Loaded config from backend database")
+            return data
+
+        # Backend returned error response (e.g., no onboarded user)
+        if data.get("error") or data.get("reason"):
+            log.push_log(f"[Config] Backend: {data.get('reason') or data.get('error')}")
+            return None
+
+        return data
     except requests.exceptions.ConnectionError:
-        log.push_log("[Config] Backend is not running — using defaults. Retry in 30s...")
+        log.push_log("[Config] Backend not reachable — using .env defaults. Start backend for DB config.")
         return None
     except requests.exceptions.Timeout:
-        log.push_log("[Config] Backend timed out — using defaults. Retry in 30s...")
+        log.push_log("[Config] Backend timeout — using .env defaults")
         return None
     except requests.exceptions.HTTPError as e:
-        log.push_log(f"[Config] Backend returned error {e.response.status_code} — using defaults.")
+        log.push_log(f"[Config] Backend HTTP {e.response.status_code} — using .env defaults")
         return None
     except Exception as e:
-        log.push_log(f"[Config] Unexpected error: {e} — using defaults.")
+        log.push_log(f"[Config] Fetch error: {e} — using .env defaults")
+        return None
+
+
+def fetch_wallet_credentials() -> dict | None:
+    """Fetch decrypted wallet credentials from backend (if available)."""
+    try:
+        r = requests.get(
+            f"{BACKEND_URL}/api/agent/wallet",
+            headers=_agent_headers(),
+            timeout=5,
+        )
+        r.raise_for_status()
+        data = r.json()
+
+        if data.get("walletAddress") and data.get("privateKey"):
+            log.push_log("[Wallet] Loaded wallet credentials from backend")
+            return data
+
+        if data.get("error"):
+            log.push_log(f"[Wallet] Backend: {data.get('error')}")
+            return None
+
+        return None
+    except requests.exceptions.ConnectionError:
+        log.push_log("[Wallet] Backend not reachable — using .env wallet credentials")
+        return None
+    except requests.exceptions.Timeout:
+        log.push_log("[Wallet] Backend timeout — using .env wallet credentials")
+        return None
+    except requests.exceptions.HTTPError as e:
+        log.push_log(f"[Wallet] Backend HTTP {e.response.status_code} — using .env credentials")
+        return None
+    except Exception as e:
+        log.push_log(f"[Wallet] Fetch error: {e} — using .env credentials")
         return None
 
 
 def get_default_config() -> dict:
-    """Default config for 4.meme trading."""
+    """Default config from .env when backend/DB is unavailable."""
     return {
         "maxPositionBnb":      float(os.getenv("MAX_POSITION_BNB", "0.1")),
         "maxPositionUsd":      float(os.getenv("MAX_POSITION_USD", "60")),
@@ -83,6 +132,10 @@ def get_default_config() -> dict:
             float(os.getenv("BC_MIN_PCT", "20")),
             float(os.getenv("BC_MAX_PCT", "80")),
         ),
+        # Wallet from .env (fallback when no onboarded user in DB)
+        "walletAddress":       os.getenv("WALLET_ADDRESS", ""),
+        "enabled":             True,  # Assume enabled in .env mode
+        "dryRun":              DRY_RUN,
     }
 
 
@@ -341,39 +394,67 @@ def run_cycle(cfg: dict, cycle_count: int):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
+    global DRY_RUN, SCAN_MODE, WATCHLIST
+
     log.push_log(f"[4MemePilot] Starting up. DRY_RUN: {DRY_RUN}, SCAN_MODE: {SCAN_MODE}")
     log.push_log("[4MemePilot] Trading 4.meme memecoins on BSC")
+
+    # Try to fetch wallet credentials from backend at startup
+    wallet_creds = fetch_wallet_credentials()
+    if wallet_creds:
+        exe.set_wallet_credentials(
+            wallet_creds["walletAddress"],
+            wallet_creds["privateKey"],
+        )
 
     cycle = 0
 
     while True:
-        # Try to fetch config from backend, fall back to defaults
-        cfg = fetch_config()
-        if cfg is None:
-            cfg = get_default_config()
-            log.push_log("[Config] Using default configuration")
+        # Try to fetch config from backend DB, fall back to .env defaults
+        db_config = fetch_config()
 
-        if not cfg.get("enabled", True):
-            log.push_log("[4MemePilot] Agent disabled by user — sleeping 30s...")
+        if db_config and db_config.get("enabled") is False:
+            log.push_log("[4MemePilot] Agent disabled by user in frontend — sleeping 30s...")
             time.sleep(30)
             continue
 
-        # Set wallet address from backend config (onboarding flow)
+        # Merge DB config with .env defaults (DB takes precedence)
+        cfg = get_default_config()
+        if db_config:
+            # Override with DB values
+            for key in ["walletAddress", "enabled", "dryRun", "scanMode", "watchlist",
+                        "maxPositionBnb", "maxPositionUsd", "minConfidence",
+                        "stopLossPct", "takeProfitPct", "maxOpenPositions",
+                        "minLiquidityUsd", "maxRugRisk", "bondingCurveRange",
+                        "loopIntervalSeconds"]:
+                if key in db_config and db_config[key] is not None:
+                    cfg[key] = db_config[key]
+
+            # Update global module state for dynamic config changes
+            DRY_RUN = cfg.get("dryRun", DRY_RUN)
+            SCAN_MODE = cfg.get("scanMode", SCAN_MODE)
+            WATCHLIST = cfg.get("watchlist", WATCHLIST)
+
+            log.push_log(f"[Config] Using database config (enabled={cfg.get('enabled', True)}, dry_run={DRY_RUN})")
+        else:
+            log.push_log("[Config] Backend unavailable — using .env defaults")
+
+        # Set wallet address (from DB onboarding or .env fallback)
         wallet_addr = cfg.get("walletAddress", "")
         if wallet_addr:
             os.environ["WALLET_ADDRESS"] = wallet_addr
-            exe.WALLET_ADDRESS = wallet_addr  # Update executor module
+            exe.WALLET_ADDRESS = wallet_addr
 
         # Check wallet is configured
-        if not os.getenv("WALLET_ADDRESS"):
-            log.push_log("[4MemePilot] WALLET_ADDRESS not set — cannot trade. Sleeping 60s...")
+        if not wallet_addr:
+            log.push_log("[4MemePilot] No wallet configured — complete onboarding or set WALLET_ADDRESS in .env")
             time.sleep(60)
             continue
 
         run_cycle(cfg, cycle)
         cycle += 1
 
-        interval = int(os.getenv("LOOP_INTERVAL_SECONDS", "300"))
+        interval = cfg.get("loopIntervalSeconds", int(os.getenv("LOOP_INTERVAL_SECONDS", "300")))
         log.push_log(f"[4MemePilot] Sleeping {interval}s until next cycle...")
         time.sleep(interval)
 

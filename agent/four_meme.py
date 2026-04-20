@@ -106,20 +106,41 @@ helper_contract = web3.eth.contract(address=TOKEN_HELPER_V3, abi=HELPER_ABI)
 # ── API Helpers ────────────────────────────────────────────────────────────────
 
 def _api_get(path: str, params: dict = None, retries: int = 3) -> dict:
-    """Call 4.meme API with retry logic."""
+    """Call 4.meme API GET endpoint with retry logic."""
     url = f"{FOUR_MEME_BASE_URL}{path}"
     for attempt in range(retries):
         try:
             resp = requests.get(url, params=params, timeout=15)
             resp.raise_for_status()
             data = resp.json()
-            if data.get("code") == "0":
+            # API returns code: 0 (integer) or code: "0" (string) for success
+            if data.get("code") in (0, "0"):
                 return data.get("data", {})
             print(f"[4-meme] API error: {data}")
             return {}
         except Exception as e:
             wait = 2 ** attempt
             print(f"[4-meme] {path} attempt {attempt+1}/{retries} failed: {e}. Waiting {wait}s...")
+            time.sleep(wait)
+    return {}
+
+
+def _api_post(path: str, json_data: dict = None, retries: int = 3) -> dict:
+    """Call 4.meme API POST endpoint with retry logic."""
+    url = f"{FOUR_MEME_BASE_URL}{path}"
+    for attempt in range(retries):
+        try:
+            resp = requests.post(url, json=json_data, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            # API returns code: 0 (integer) or code: "0" (string) for success
+            if data.get("code") in (0, "0"):
+                return data.get("data", {})
+            print(f"[4-meme] API POST error: {data}")
+            return {}
+        except Exception as e:
+            wait = 2 ** attempt
+            print(f"[4-meme] {path} POST attempt {attempt+1}/{retries} failed: {e}. Waiting {wait}s...")
             time.sleep(wait)
     return {}
 
@@ -131,75 +152,71 @@ def get_token_by_address(address: str) -> dict:
     Fetch token info from 4.meme API by contract address.
     Returns dict with all token metrics needed for trading decisions.
     """
-    data = _api_get("/private/token/get", params={"address": address})
-    if not data:
+    data = _api_get("/private/token/get/v2", params={"address": address})
+    if not data or not data.get("address"):
         return {}
 
-    # Parse token basic info
-    token_info = data.get("tokenInfo", {}) or data
+    # Parse token basic info (v2 API returns flat structure)
+    token_info = data
 
-    # Extract bonding curve progress
-    bonding_curve_pct = 0.0
-    if token_info.get("offers") and token_info.get("maxOffers"):
-        offers = float(token_info.get("offers", 0))
-        max_offers = float(token_info.get("maxOffers", 1))
-        if max_offers > 0:
-            bonding_curve_pct = ((max_offers - offers) / max_offers) * 100
+    # Extract bonding curve progress from progress field (already a percentage 0-1)
+    progress_raw = float(token_info.get("progress", 0) or 0)
+    bonding_curve_pct = progress_raw * 100  # Convert 0.01567 -> 1.567%
 
     # Calculate launch age in minutes
     launched_min_ago = 0
     launch_time = token_info.get("launchTime", 0)
     if launch_time:
-        launched_min_ago = int((time.time() - int(launch_time)) / 60)
+        # launchTime is in milliseconds
+        launched_min_ago = int((time.time() - (int(launch_time) / 1000)) / 60)
 
-    # Top 10 holder percentage (rug risk indicator)
+    # Top 10 holder percentage - not available in v2 API, default to 0
     top10_holder_pct = 0.0
-    holder_distribution = data.get("holderDistribution", {})
-    if holder_distribution:
-        top10_pct = holder_distribution.get("top10HolderPercent", 0)
-        top10_holder_pct = float(top10_pct) if top10_pct else 0.0
 
-    # Buy/sell counts in last 1h
-    trade_stats = data.get("tradeStats", {}) or {}
-    buy_count_1h = int(trade_stats.get("buyCount1h", 0) or 0)
-    sell_count_1h = int(trade_stats.get("sellCount1h", 0) or 0)
+    # Buy/sell counts from token price data
+    trading_volume = float(token_info.get("trading", 0) or 0)  # Volume in BNB
+    volume_24h_usd = trading_volume * get_bnb_price_usd()
 
     # Price in BNB and USD
-    price_raw = token_info.get("lastPrice", 0) or 0
-    price_bnb = float(price_raw) / 1e18 if price_raw else 0.0
+    price_data = token_info.get("tokenPrice", {})
+    price_bnb_str = price_data.get("price", "0") if price_data else "0"
+    price_bnb = float(price_bnb_str) if price_bnb_str else 0.0
+    price_usd = price_bnb * get_bnb_price_usd()
 
-    # Liquidity in USD (funds raised in BNB * BNB price)
-    funds_raised = float(token_info.get("funds", 0) or 0) / 1e18
-    bnb_price_usd = get_bnb_price_usd()
-    liquidity_usd = funds_raised * bnb_price_usd
+    # Liquidity in USD (raisedAmount is in BNB)
+    funds_raised = float(token_info.get("raisedAmount", 0) or 0)
+    liquidity_usd = funds_raised * get_bnb_price_usd()
+
+    # Market cap
+    market_cap_str = price_data.get("marketCap", "0") if price_data else "0"
+    market_cap_usd = float(market_cap_str) if market_cap_str else 0.0
 
     return {
         "symbol":              str(token_info.get("symbol", "UNKNOWN")).upper(),
         "address":             address,
         "name":                token_info.get("name", "Unknown Token"),
         "price_bnb":           price_bnb,
-        "price_usd":           price_bnb * bnb_price_usd if price_bnb else 0.0,
-        "market_cap_usd":      float(token_info.get("marketCap", 0) or 0),
-        "volume_24h_usd":      float(trade_stats.get("volume24h", 0) or 0),
+        "price_usd":           price_usd,
+        "market_cap_usd":      market_cap_usd,
+        "volume_24h_usd":      volume_24h_usd,
         "holder_count":        int(token_info.get("holderCount", 0) or 0),
         "bonding_curve_pct":   bonding_curve_pct,
         "launched_min_ago":    launched_min_ago,
         "liquidity_usd":       liquidity_usd,
         "top10_holder_pct":    top10_holder_pct,
-        "buy_count_1h":        buy_count_1h,
-        "sell_count_1h":       sell_count_1h,
+        "buy_count_1h":        0,  # Not available in v2 API
+        "sell_count_1h":       0,  # Not available in v2 API,
         # Additional 4-meme specific fields
-        "version":             data.get("version", "V2"),
-        "is_trending_4meme":   data.get("isTrending", False),
-        "trending_rank_4meme": data.get("trendingRank", None),
-        "fee_plan":            data.get("feePlan", False),  # AntiSniperFeeMode
-        "ai_creator":          data.get("aiCreator", False),
-        "tax_info":            data.get("taxInfo", None),
+        "version":             token_info.get("version", "V1"),
+        "is_trending_4meme":   False,  # Not available in v2 API
+        "trending_rank_4meme": None,
+        "fee_plan":            token_info.get("feePlan", False),
+        "ai_creator":          token_info.get("aiCreator", False),
+        "tax_info":            None,
         # Raw data for on-chain verification
-        "offers":              int(token_info.get("offers", 0) or 0),
-        "max_offers":          int(token_info.get("maxOffers", 0) or 0),
+        "progress":            progress_raw,
         "funds_raised_bnb":    funds_raised,
-        "launch_time":         int(launch_time) if launch_time else 0,
+        "launch_time":         int(launch_time / 1000) if launch_time else 0,
     }
 
 
@@ -207,26 +224,68 @@ def get_trending_tokens(limit: int = 20) -> list:
     """
     Fetch trending tokens from 4.meme API.
     Returns list of token addresses sorted by trending score.
-    """
-    data = _api_get("/private/token/trending", params={"limit": limit})
-    if not data:
-        return []
 
-    tokens = data.get("tokens", []) if isinstance(data, dict) else data
-    return [t.get("address") for t in tokens if t.get("address")]
+    Note: The public list endpoints require authentication.
+    For production use, configure a watchlist in .env or use
+    the Bitquery GraphQL API for token discovery.
+    """
+    # Try the authenticated endpoint first
+    payload = {
+        "orderBy": "Hot",
+        "pageIndex": 1,
+        "pageSize": limit,
+        "listedPancake": False,
+    }
+    data = _api_post("/public/token/search", json_data=payload)
+    if data and data.get("list"):
+        tokens = data.get("list", [])
+        return [t.get("address") for t in tokens if t.get("address")]
+
+    # Fallback: return empty list - user should configure watchlist
+    print("[4-meme] Trending tokens endpoint requires authentication. Use WATCHLIST in .env")
+    return []
 
 
 def get_new_launches(limit: int = 20, offset: int = 0) -> list:
     """
     Fetch newly launched tokens from 4.meme.
     Returns list of token addresses sorted by launch time (newest first).
-    """
-    data = _api_get("/private/token/new", params={"limit": limit, "offset": offset})
-    if not data:
-        return []
 
-    tokens = data.get("tokens", []) if isinstance(data, dict) else data
-    return [t.get("address") for t in tokens if t.get("address")]
+    Note: The public list endpoints require authentication.
+    For production use, configure a watchlist in .env or use
+    the Bitquery GraphQL API for token discovery.
+    """
+    page = max(1, (offset // 30) + 1)
+    payload = {
+        "orderBy": "TimeDesc",
+        "pageIndex": page,
+        "pageSize": min(limit, 30),
+        "listedPancake": False,
+    }
+    data = _api_post("/public/token/search", json_data=payload)
+    if data and data.get("list"):
+        tokens = data.get("list", [])
+        return [t.get("address") for t in tokens if t.get("address")]
+
+    # Fallback: return empty list - user should configure watchlist
+    print("[4-meme] New launches endpoint requires authentication. Use WATCHLIST in .env")
+    return []
+
+
+def get_tokens_by_addresses(addresses: list) -> list:
+    """
+    Fetch token info for a list of addresses.
+    Returns list of token data dicts.
+    """
+    results = []
+    for addr in addresses:
+        try:
+            token_data = get_token_by_address(addr.strip())
+            if token_data and token_data.get("address"):
+                results.append(token_data)
+        except Exception as e:
+            print(f"[4-meme] Failed to fetch token {addr}: {e}")
+    return results
 
 
 def get_token_by_id(request_id: int) -> dict:
@@ -274,7 +333,9 @@ def get_token_info_onchain(token_address: str) -> dict:
     More reliable than API for real-time bonding curve status.
     """
     try:
-        info = helper_contract.functions.getTokenInfo(token_address).call()
+        # Convert to checksum address
+        checksum_addr = web3.to_checksum_address(token_address)
+        info = helper_contract.functions.getTokenInfo(checksum_addr).call()
         return {
             "version":          int(info[0]),  # 1=V1, 2=V2
             "token_manager":    info[1],

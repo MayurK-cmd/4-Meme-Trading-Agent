@@ -9,7 +9,7 @@ import PortfolioTab from "../tabs/PortfolioTab";
 const TABS = ["portfolio", "config", "decisions", "logs"];
 const BSC_GOLD = "#F3BA2F";
 
-// Sample memecoin data for ticker (4.meme style tokens)
+// Sample memecoin data for ticker - v2 (4.meme style tokens)
 const MEMECOIN_TICKERS = [
   { symbol: "PEPE", price: 0.00000721, change: "5.23" },
   { symbol: "WIF", price: 2.34, change: "-2.15" },
@@ -29,7 +29,7 @@ export default function Dashboard({ user, onLogout }) {
   const [tab, setTab] = useState("portfolio");
   const [showProtocol, setShowProtocol] = useState(false);
   const [systemTime, setSystemTime] = useState(new Date().toLocaleTimeString());
-  const [tickerData, setTickerData] = useState(MEMOCOIN_TICKERS);
+  const [tickerData, setTickerData] = useState(MEMECOIN_TICKERS);
 
   useEffect(() => {
     const timer = setInterval(() => setSystemTime(new Date().toLocaleTimeString()), 1000);

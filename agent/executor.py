@@ -19,11 +19,23 @@ import four_meme as fm
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-BSC_RPC_URL       = os.getenv("BSC_RPC_URL", "https://bsc-dataseed.binance.org")
+BSC_RPC_URL        = os.getenv("BSC_RPC_URL", "https://bsc-dataseed.binance.org")
 WALLET_PRIVATE_KEY = os.getenv("WALLET_PRIVATE_KEY", "")
-# WALLET_ADDRESS is set from backend config at runtime (see main.py)
-WALLET_ADDRESS    = ""
-DRY_RUN           = os.getenv("DRY_RUN", "true").lower() == "true"
+WALLET_ADDRESS     = os.getenv("WALLET_ADDRESS", "")  # Set from backend config at runtime
+DRY_RUN            = os.getenv("DRY_RUN", "true").lower() == "true"
+
+
+def set_wallet_credentials(address: str, private_key: str):
+    """Update wallet credentials dynamically from backend config."""
+    global WALLET_ADDRESS, WALLET_PRIVATE_KEY
+    WALLET_ADDRESS = address
+    WALLET_PRIVATE_KEY = private_key
+    os.environ["WALLET_ADDRESS"] = address
+    os.environ["WALLET_PRIVATE_KEY"] = private_key
+    # Also update four_meme module
+    import four_meme as fm
+    fm.WALLET_ADDRESS = address
+    fm.WALLET_PRIVATE_KEY = private_key
 
 # TradeLogger contract (deployed on BSC)
 TRADE_LOGGER_ADDRESS = os.getenv("TRADE_LOGGER_ADDRESS", "0xEe39002BF9783DB5dac224Df968D0e3c5CE39a2B")

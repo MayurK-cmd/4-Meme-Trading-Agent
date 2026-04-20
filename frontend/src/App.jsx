@@ -22,12 +22,20 @@ export default function App() {
       return;
     }
 
-    api.post("/api/auth/sync", { 
-      email: user.email?.address || null, 
-      walletAddress: user.wallet?.address || null 
-    })
-      .then(data => setOnboarded(data.onboarded))
-      .catch(() => setOnboarded(false));
+    // Skip sync if not ready (Privy token may not be available yet)
+    const syncUser = async () => {
+      try {
+        const data = await api.post("/api/auth/sync", {
+          email: user.email?.address || null,
+          walletAddress: user.wallet?.address || null
+        });
+        setOnboarded(data.onboarded);
+      } catch (err) {
+        console.log("[App] Auth sync skipped - token not ready:", err.message);
+        setOnboarded(false);
+      }
+    };
+    syncUser();
   }, [authenticated, user, api]);
 
   if (!ready) return (

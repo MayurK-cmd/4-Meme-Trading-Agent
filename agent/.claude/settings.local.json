@@ -6,7 +6,21 @@
       "Bash(dir:*)",
       "Bash(npm install:*)",
       "Bash(node -e \":*)",
-      "Bash(curl -H \"x-agent-key: aa78d2bdf36c0144bbf31ff05450d8d183f144b03a76a65e811e18af47d83480\" http://localhost:3001/api/agent/config)"
+      "Bash(curl -H \"x-agent-key: aa78d2bdf36c0144bbf31ff05450d8d183f144b03a76a65e811e18af47d83480\" http://localhost:3001/api/agent/config)",
+      "WebSearch",
+      "WebFetch(domain:four-meme.gitbook.io)",
+      "WebFetch(domain:docs.codex.io)",
+      "WebFetch(domain:four.meme)",
+      "WebFetch(domain:www.fourmemevolumebot.com)",
+      "Bash(curl -s \"https://four.meme/meme-api/v1/private/token/get/v2?address=0x1910c032a188d5c03bc6fdb89b9fb720e43b840b\")",
+      "Bash(curl -s -X POST \"https://four.meme/meme-api/v1/public/token/search\" -H \"Content-Type: application/json\" -d '{\"orderBy\":\"Hot\",\"pageIndex\":1,\"pageSize\":5,\"listedPancake\":false}')",
+      "Bash(curl -s -X POST \"https://four.meme/meme-api/v1/public/token/search\" -H \"Content-Type: application/json\" -d '{\"orderBy\":\"TimeDesc\",\"pageIndex\":1,\"pageSize\":5}')",
+      "Bash(curl -s \"https://four.meme/meme-api/v1/private/token/query?orderBy=TimeDesc&tokenName=&listedPancake=false&pageIndex=1&pageSize=5\")",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.bitquery.io)",
+      "Bash(curl -s \"https://four.meme/meme-api/v1/private/token/get/v2?address=0x1910c032a188d5c03bc6fdb89b9fb720e43b840b\" -H \"Referer: https://four.meme/\")",
+      "Bash(curl -s https://graphql.bitquery.io/ -X POST -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(curl -s \"https://four.meme/\" -H \"Accept: text/html\")"
     ]
   }
 }

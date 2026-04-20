@@ -58,7 +58,7 @@ app.get("/api/agent/config", requireAgentKey, async (req, res) => {
       });
     }
 
-    if (!user.walletAddress) {
+    if (!user.bscAddress) {
       return res.json({
         enabled: false,
         reason:  "User has no BSC wallet address saved — complete onboarding",
@@ -67,36 +67,36 @@ app.get("/api/agent/config", requireAgentKey, async (req, res) => {
 
     res.json({
       // Agent control
-      enabled:             cfg.enabled,
-      walletAddress:       user.walletAddress,  // BSC address for 4.meme
-      dryRun:              cfg.dryRun,
+      enabled:             cfg.enabled !== false,  // Default to true if not set
+      walletAddress:       user.bscAddress,        // BSC address for 4.meme
+      dryRun:              cfg.dryRun !== false,   // Default to true (safe)
 
       // 4.meme scan settings
-      scanMode:            cfg.scanMode,
-      watchlist:           cfg.watchlist,
+      scanMode:            cfg.scanMode || "trending",
+      watchlist:           cfg.watchlist || [],
 
       // Position sizing
-      maxPositionBnb:      cfg.maxPositionBnb,
-      maxPositionUsd:      cfg.maxPositionUsd,
-      maxOpenPositions:    cfg.maxOpenPositions,
+      maxPositionBnb:      cfg.maxPositionBnb || 0.1,
+      maxPositionUsd:      cfg.maxPositionUsd || 60,
+      maxOpenPositions:    cfg.maxOpenPositions || 3,
 
       // Risk management
-      minConfidence:       cfg.minConfidence,
-      stopLossPct:         cfg.stopLossPct,
-      takeProfitPct:       cfg.takeProfitPct,
+      minConfidence:       cfg.minConfidence || 0.55,
+      stopLossPct:         cfg.stopLossPct || 5.0,
+      takeProfitPct:       cfg.takeProfitPct || 10.0,
 
       // Filtering criteria
-      minLiquidityUsd:     cfg.minLiquidityUsd,
-      maxRugRisk:          cfg.maxRugRisk,
-      bondingCurveRange:   [cfg.bcMinPct, cfg.bcMaxPct],
+      minLiquidityUsd:     cfg.minLiquidityUsd || 5000,
+      maxRugRisk:          cfg.maxRugRisk || 50,
+      bondingCurveRange:   [cfg.bcMinPct || 20, cfg.bcMaxPct || 80],
 
       // Loop timing
-      loopIntervalSeconds: cfg.loopIntervalSeconds,
+      loopIntervalSeconds: cfg.loopIntervalSeconds || 300,
 
       // Legacy fields (for backwards compatibility)
       symbols:             cfg.symbols || [],
-      riskLevel:           cfg.riskLevel,
-      useBinanceFallback:  cfg.useBinanceFallback,
+      riskLevel:           cfg.riskLevel || "balanced",
+      useBinanceFallback:  cfg.useBinanceFallback !== false,
     });
   } catch (e) {
     console.error("[/api/agent/config]", e.message);
@@ -126,6 +126,29 @@ app.get("/api/agent/user-id", requireAgentKey, async (req, res) => {
     if (!user) return res.status(404).json({ error: "No onboarded user found" });
     res.json({ userId: user._id });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── GET /api/agent/wallet — agent fetches wallet credentials ──────────────────
+// Returns decrypted BSC wallet credentials for trading
+// Protected by requireAgentKey — only the agent can access this
+app.get("/api/agent/wallet", requireAgentKey, async (req, res) => {
+  try {
+    const { decrypt } = require("./middleware/crypto");
+    const user = await User.findOne({ onboarded: true }).lean();
+    if (!user) return res.status(404).json({ error: "No onboarded user found" });
+
+    if (!user.bscAddress || !user.bscPrivateKeyEnc) {
+      return res.status(400).json({ error: "Wallet not configured — complete onboarding" });
+    }
+
+    res.json({
+      walletAddress: user.bscAddress,
+      privateKey: decrypt(user.bscPrivateKeyEnc),
+    });
+  } catch (e) {
+    console.error("[/api/agent/wallet]", e.message);
     res.status(500).json({ error: e.message });
   }
 });
