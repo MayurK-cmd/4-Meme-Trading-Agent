@@ -1,11 +1,12 @@
 import { usePrivy } from "@privy-io/react-auth";
+import { useCallback } from "react";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 export function useApi() {
   const { getAccessToken } = usePrivy();
 
-  async function request(method, path, body) {
+  const request = useCallback(async (method, path, body) => {
     const token = await getAccessToken();
     const res = await fetch(`${API}${path}`, {
       method,
@@ -20,11 +21,11 @@ export function useApi() {
       throw new Error(err.error || res.statusText);
     }
     return res.json();
-  }
+  }, [getAccessToken]);
 
   return {
-    get:    (path)        => request("GET",   path),
-    post:   (path, body)  => request("POST",  path, body),
-    patch:  (path, body)  => request("PATCH", path, body),
+    get:    useCallback((path) => request("GET", path, undefined), [request]),
+    post:   useCallback((path, body) => request("POST", path, body), [request]),
+    patch:  useCallback((path, body) => request("PATCH", path, body), [request]),
   };
 }

@@ -310,19 +310,34 @@ def scan_for_opportunities(
     min_liquidity: float = 5000,
     max_rug_risk: int = 50,
     bonding_curve_range: tuple = (20, 80),
+    watchlist: list = None,
 ) -> list:
     """
-    Scan trending tokens for trading opportunities based on filters.
+    Scan tokens for trading opportunities based on filters.
 
     Args:
         min_liquidity: Minimum liquidity in USD
         max_rug_risk: Maximum acceptable rug risk score (0-100)
         bonding_curve_range: (min_pct, max_pct) for bonding curve filter
+        watchlist: Optional list of token addresses to scan (if provided, uses watchlist instead of trending)
 
     Returns:
         List of token snapshots matching criteria
     """
-    snapshots = get_trending_tokens_snapshot(limit=20)
+    if watchlist and len(watchlist) > 0:
+        # Scan watchlist tokens
+        snapshots = []
+        for addr in watchlist:
+            try:
+                snapshot = get_market_snapshot(addr.strip())
+                if not snapshot.get("error"):
+                    snapshots.append(snapshot)
+            except Exception as e:
+                print(f"[Market] Failed to fetch snapshot for {addr}: {e}")
+    else:
+        # Scan trending tokens
+        snapshots = get_trending_tokens_snapshot(limit=20)
+
     opportunities = []
 
     for s in snapshots:

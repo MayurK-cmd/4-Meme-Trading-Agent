@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useApi } from "../useApi";
 import { motion } from "framer-motion";
 
@@ -24,6 +24,7 @@ export default function ConfigTab() {
 
   useEffect(() => {
     api.get("/api/config").then(setCfg).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const update = (k, v) => setCfg(c => ({ ...c, [k]: v }));
@@ -321,7 +322,29 @@ export default function ConfigTab() {
         </div>
       </div>
 
-      {/* 7. Deployment Button */}
+      {/* 7. Watchlist Display */}
+      <section className="space-y-6">
+        <div className="flex items-center gap-4">
+          <h3 className="text-zinc-500 text-[10px] font-mono uppercase tracking-[0.5em] italic">// Watchlist_Tokens</h3>
+          <div className="h-px flex-1 bg-zinc-900" />
+        </div>
+
+        {(!cfg.watchlist || cfg.watchlist.length === 0) ? (
+          <div className="text-zinc-600 text-[10px] uppercase tracking-widest text-center py-8 border border-zinc-800">
+            No tokens in watchlist — add tokens from Portfolio tab
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {cfg.watchlist.map((addr) => (
+              <WatchlistTokenCard key={addr} address={addr} onRemove={(removedAddr) => {
+                update("watchlist", cfg.watchlist.filter(a => a !== removedAddr));
+              }} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 8. Deployment Button */}
       <motion.button
         onClick={save}
         disabled={saving}
@@ -343,6 +366,79 @@ export default function ConfigTab() {
         {saving ? "SYNCING_PROTOCOL..." : saved ? "✓ CONFIG_DEPLOYED" : "COMMIT_SYSTEM_CHANGES"}
       </motion.button>
     </motion.div>
+  );
+}
+
+function WatchlistTokenCard({ address, onRemove }) {
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchToken = async () => {
+      try {
+        const res = await fetch(`https://four.meme/meme-api/v1/private/token/get/v2?address=${address}`);
+        const data = await res.json();
+        setToken(data.data || null);
+      } catch (e) {
+        console.log("[WatchlistCard] Fetch error:", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchToken();
+  }, [address]);
+
+  if (loading) {
+    return (
+      <div className="border border-zinc-800 bg-zinc-950 p-3 animate-pulse">
+        <div className="h-4 bg-zinc-800 rounded w-16 mb-2" />
+        <div className="h-3 bg-zinc-800 rounded w-24" />
+      </div>
+    );
+  }
+
+  const symbol = token?.symbol || address.slice(0, 8);
+  const name = token?.name || "Unknown";
+  const price = token?.price ? parseFloat(token.price) : 0;
+  const img = token?.img;
+
+  return (
+    <div className="border border-zinc-800 bg-zinc-950 p-3 hover:border-[#F3BA2F] transition-colors group relative">
+      <button
+        onClick={() => onRemove(address)}
+        className="absolute top-2 right-2 text-zinc-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Remove from watchlist"
+      >
+        ✕
+      </button>
+      <a
+        href={`https://four.meme/token/${address}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block"
+      >
+        <div className="flex items-center gap-2 mb-2">
+          {img ? (
+            <img
+              src={`https://four.meme${img}`}
+              alt={symbol}
+              className="w-6 h-6 rounded-full object-cover"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'flex';
+              }}
+            />
+          ) : null}
+          <div className={`w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[8px] font-black text-[#F3BA2F] ${img ? 'hidden' : ''}`}>
+            {symbol.slice(0, 2).toUpperCase()}
+          </div>
+          <span className="text-white font-bold text-xs">{symbol}</span>
+        </div>
+        <div className="text-[#F3BA2F] font-mono text-xs">${price.toFixed(8)}</div>
+        <div className="text-zinc-600 text-[8px] truncate">{name}</div>
+        <div className="text-zinc-700 text-[7px] truncate mt-1">{address.slice(0, 10)}...</div>
+      </a>
+    </div>
   );
 }
 

@@ -36,7 +36,8 @@ export default function App() {
       }
     };
     syncUser();
-  }, [authenticated, user, api]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authenticated, user]);
 
   if (!ready) return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center font-mono text-zinc-500 uppercase tracking-widest">

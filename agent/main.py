@@ -357,11 +357,12 @@ def run_cycle(cfg: dict, cycle_count: int):
         log.push_log(f"  New launches: {len(tokens_to_process)} tokens")
 
     else:
-        # Scan trending tokens with filters
+        # Scan trending tokens with filters (or watchlist if configured)
         opportunities = mkt.scan_for_opportunities(
             min_liquidity=min_liq,
             max_rug_risk=max_rug,
             bonding_curve_range=bc_range,
+            watchlist=cfg.get("watchlist"),
         )
         tokens_to_process = [t["address"] for t in opportunities if not t.get("error")]
         log.push_log(f"  Opportunities found: {len(tokens_to_process)} tokens")

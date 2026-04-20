@@ -16,7 +16,12 @@ const Config = require("./models/Config");
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+app.use(cors({
+  origin: true,  // Allow all origins for development
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-agent-key'],
+}));
 app.use(express.json());
 
 // ── Agent key middleware ───────────────────────────────────────────────────────
