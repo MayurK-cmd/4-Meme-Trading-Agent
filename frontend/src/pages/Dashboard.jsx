@@ -7,7 +7,7 @@ import LogsTab from "../tabs/LogsTab";
 import PortfolioTab from "../tabs/PortfolioTab";
 
 const TABS = ["portfolio", "config", "decisions", "logs"];
-const BSC_GOLD = "#F3BA2F";
+const BSC_GOLD = "#F0B90B"; // BNB Chain official gold
 
 // Sample memecoin data for ticker - v2 (4.meme style tokens)
 const MEMECOIN_TICKERS = [

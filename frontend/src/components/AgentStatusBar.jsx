@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 
 export default function AgentStatusBar() {
   const api = useApi();
-  const PACIFICA_BLUE = "#00d1ff";
+  const BNB_GOLD = "#F0B90B"; // BNB Chain official gold
 
   const [status,   setStatus]   = useState(null);
   const [enabled,  setEnabled]  = useState(null);
@@ -42,11 +42,11 @@ export default function AgentStatusBar() {
   }
 
   const isRunning = status?.running ?? false;
-  const dotColor = !enabled ? "#3f3f46" : isRunning ? PACIFICA_BLUE : "#f59e0b";
+  const dotColor = !enabled ? "#3f3f46" : isRunning ? BNB_GOLD : "#f59e0b";
   const statusText = !enabled ? "OFFLINE" : isRunning ? "ACTIVE" : "STANDBY";
 
   return (
-    <div className="flex items-center justify-between px-8 py-3 border-b border-[#1a2b3b] bg-gradient-to-r from-[#00d1ff05] to-transparent font-mono text-sm uppercase tracking-wider">
+    <div className="flex items-center justify-between px-8 py-3 border-b border-[#1a2b3b] bg-gradient-to-r from-[#F0B90B08] to-transparent font-mono text-sm uppercase tracking-wider">
       <div className="flex items-center gap-6">
         {/* Status Indicator */}
         <div className="flex items-center gap-3 px-4 py-2 bg-zinc-950/50 border border-zinc-900 rounded-sm">
@@ -63,7 +63,7 @@ export default function AgentStatusBar() {
         {isRunning && status?.lastSymbol && (
           <div className="flex items-center gap-2 text-zinc-500">
             <span className="text-xs uppercase tracking-widest">Monitoring:</span>
-            <span style={{ color: PACIFICA_BLUE }} className="font-black">{status.lastSymbol}</span>
+            <span style={{ color: BNB_GOLD }} className="font-black">{status.lastSymbol}</span>
           </div>
         )}
 

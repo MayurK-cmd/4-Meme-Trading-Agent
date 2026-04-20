@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useApi } from "../useApi";
 import { motion } from "framer-motion";
 
-const BSC_GOLD = "#F3BA2F";
+const BSC_GOLD = "#F0B90B"; // BNB Chain official gold
 
 const SCAN_MODES = [
   { v: "trending", l: "TRENDING", desc: "Scan Elfa AI trending tokens" },

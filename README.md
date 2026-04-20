@@ -11,6 +11,14 @@
 
 ---
 
+## 🎬 Demo
+
+**Watch the demo video:** [Coming Soon]
+
+**Live Dashboard:** Run locally (see [Getting Started](#-getting-started))
+
+---
+
 ## 🎯 What Is This?
 
 **4MemePilot** is an autonomous AI trading bot that analyses and trades meme tokens on the **four.meme** launchpad. It combines:
@@ -157,9 +165,20 @@ The AI looks for multiple aligned signals:
 
 - Python 3.11+
 - BSC wallet (MetaMask, Trust Wallet, etc.)
-- BSC testnet or mainnet BNB for gas
+- **Testnet BNB** for gas (contract logging on testnet)
+- **Mainnet BNB** for actual 4.meme trading (when DRY_RUN=false)
 - Google Gemini API key
 - Elfa AI API key (optional but recommended)
+
+### ⚠️ Hybrid Network Architecture
+
+| Component | Network | Purpose |
+|-----------|---------|---------|
+| **TradeLogger Contract** | BSC Testnet (Chain ID: 97) | Low-cost on-chain decision logging |
+| **4.meme Trading** | BSC Mainnet (Chain ID: 56) | Real memecoin trading |
+| **Wallet Auth (Privy)** | BSC Testnet | User authentication |
+
+> Get testnet BNB from [faucet](https://testnet.bnbchain.org/faucet-smart) for gas fees.
 
 ### Installation
 
@@ -195,7 +214,7 @@ python main.py
 |----------|-------------|---------|
 | `WALLET_ADDRESS` | BSC wallet address | (required) |
 | `WALLET_PRIVATE_KEY` | BSC wallet private key | (required) |
-| `BSC_RPC_URL` | BSC RPC endpoint | `https://bsc-dataseed.binance.org` |
+| `BSC_RPC_URL` | BSC RPC endpoint (for trading) | `https://bsc-dataseed.binance.org` (mainnet) |
 | `GEMINI_API_KEY` | Google Gemini API key | (required) |
 | `ELFA_API_KEY` | Elfa AI API key | (optional) |
 | `DRY_RUN` | Simulation mode | `true` |
@@ -213,7 +232,7 @@ python main.py
 
 ## 📜 Smart Contracts
 
-### 4.meme Protocol (BSC)
+### 4.meme Protocol (BSC Mainnet)
 
 | Contract | Address |
 |----------|---------|
@@ -221,11 +240,13 @@ python main.py
 | TokenManager V2 | `0x5c952063c7fc8610FFDB798152D69F0B9550762b` |
 | TokenManagerHelper3 | `0xF251F83e40a78868FcfA3FA4599Dad6494E46034` |
 
-### 4MemePilot
+### 4MemePilot (BSC Testnet)
 
-| Contract | Address | Purpose |
-|----------|---------|---------|
-| TradeLogger | `0xEe39002BF9783DB5dac224Df968D0e3c5CE39a2B` | On-chain decision audit |
+| Contract | Address | Network | Purpose |
+|----------|---------|---------|---------|
+| TradeLogger | `0xEe39002BF9783DB5dac224Df968D0e3c5CE39a2B` | Testnet | On-chain decision audit |
+
+> TradeLogger is on testnet to save gas costs. View on [testnet.bscscan.com](https://testnet.bscscan.com/address/0xEe39002BF9783DB5dac224Df968D0e3c5CE39a2B)
 
 ---
 

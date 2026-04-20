@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useApi } from "../useApi";
 import { motion } from "framer-motion";
 
-const BSC_GOLD = "#F3BA2F";
+const BSC_GOLD = "#F0B90B"; // BNB Chain official gold
 
 // 4.meme API for token search
 const FOUR_MEME_BASE_URL = "https://four.meme/meme-api/v1";

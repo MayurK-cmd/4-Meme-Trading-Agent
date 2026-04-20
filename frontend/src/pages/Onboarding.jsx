@@ -7,7 +7,7 @@ export default function OnboardingPage({ onDone }) {
   const [privateKey, setPrivateKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const BSC_GOLD = "#F3BA2F";
+  const BSC_GOLD = "#F0B90B"; // BNB Chain official gold
 
   async function submit() {
     if (!bscAddress.trim()) { setError("BSC wallet address is required"); return; }
@@ -44,7 +44,7 @@ export default function OnboardingPage({ onDone }) {
             <label className="text-[10px] uppercase tracking-widest text-zinc-500">BSC Wallet Address *</label>
             <input
               type="text"
-              className="bg-transparent border border-[#1a2b3b] p-3 text-sm focus:border-[#F3BA2F] outline-none transition-colors"
+              className="bg-transparent border border-[#1a2b3b] p-3 text-sm focus:border-[#F0B90B] outline-none transition-colors"
               placeholder="0x..."
               value={bscAddress}
               onChange={e => setBscAddress(e.target.value)}
@@ -56,7 +56,7 @@ export default function OnboardingPage({ onDone }) {
             <label className="text-[10px] uppercase tracking-widest text-zinc-500">BSC Private Key *</label>
             <input
               type="password"
-              className="bg-transparent border border-[#1a2b3b] p-3 text-sm focus:border-[#F3BA2F] outline-none transition-colors font-sans"
+              className="bg-transparent border border-[#1a2b3b] p-3 text-sm focus:border-[#F0B90B] outline-none transition-colors font-sans"
               placeholder="0x..."
               value={privateKey}
               onChange={e => setPrivateKey(e.target.value)}

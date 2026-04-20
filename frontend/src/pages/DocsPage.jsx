@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 
 export default function DocsPage() {
-  const blue = "#00d1ff";
+  const BNB_GOLD = "#F0B90B";
   const [systemTime, setSystemTime] = useState(new Date().toLocaleTimeString());
 
   useEffect(() => {
@@ -12,18 +12,18 @@ export default function DocsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#020408] text-zinc-300 font-sans selection:bg-[#00d1ff] selection:text-black flex">
+    <div className="min-h-screen bg-[#020408] text-zinc-300 font-sans selection:bg-[#F0B90B] selection:text-black flex">
       <div className="flex w-full">
         {/* Sidebar Navigation - Scrollable independently */}
         <aside className="w-full md:w-80 border-r border-[#1a2b3b] bg-black p-10 flex flex-col h-screen overflow-y-auto custom-scrollbar flex-shrink-0">
           <Link to="/" className="text-white font-black tracking-[0.4em] text-sm mb-16 uppercase flex items-center gap-3 group">
-            <div className="w-4 h-4 rotate-45 border-2 transition-all group-hover:bg-[#00d1ff]" style={{ borderColor: blue }} />
-            ← <span className="group-hover:text-[#00d1ff]">PILOT_HOME</span>
+            <div className="w-4 h-4 rotate-45 border-2 transition-all group-hover:bg-[#F0B90B]" style={{ borderColor: BNB_GOLD }} />
+            ← <span className="group-hover:text-[#F0B90B]">PILOT_HOME</span>
           </Link>
 
           <nav className="space-y-12 uppercase font-mono text-[11px] tracking-widest">
             <div>
-              <p style={{ color: blue }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">01_Intro</p>
+              <p style={{ color: BNB_GOLD }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">01_Intro</p>
               <ul className="space-y-4 pl-4 border-l border-zinc-800">
                 <li><a href="#overview" className="hover:text-white transition-colors">Overview</a></li>
                 <li><a href="#hybrid-architecture" className="hover:text-white transition-colors">Architecture</a></li>
@@ -31,35 +31,35 @@ export default function DocsPage() {
               </ul>
             </div>
             <div>
-              <p style={{ color: blue }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">02_User_Guide</p>
+              <p style={{ color: BNB_GOLD }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">02_User_Guide</p>
               <ul className="space-y-4 pl-4 border-l border-zinc-800">
                 <li><a href="#for-end-users" className="hover:text-white transition-colors">For_End_Users</a></li>
                 <li><a href="#onboarding-steps" className="hover:text-white transition-colors">Onboarding_Steps</a></li>
               </ul>
             </div>
             <div>
-              <p style={{ color: blue }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">03_Deployment</p>
+              <p style={{ color: BNB_GOLD }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">03_Deployment</p>
               <ul className="space-y-4 pl-4 border-l border-zinc-800">
                 <li><a href="#option1-hybrid" className="hover:text-white transition-colors">Full Local Setup</a></li>
                 <li><a href="#env-vars" className="hover:text-white transition-colors">Environment_Vars</a></li>
               </ul>
             </div>
             <div>
-              <p style={{ color: blue }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">03_Trading</p>
+              <p style={{ color: BNB_GOLD }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">03_Trading</p>
               <ul className="space-y-4 pl-4 border-l border-zinc-800">
                 <li><a href="#risk-profiles" className="hover:text-white transition-colors">Risk_Profiles</a></li>
                 <li><a href="#simulation-mode" className="hover:text-white transition-colors">Simulation_Mode</a></li>
               </ul>
             </div>
             <div>
-              <p style={{ color: blue }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">04_Signals</p>
+              <p style={{ color: BNB_GOLD }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">04_Signals</p>
               <ul className="space-y-4 pl-4 border-l border-zinc-800">
                 <li><a href="#signal-mechanics" className="hover:text-white transition-colors">Signal_Mechanics</a></li>
                 <li><a href="#decision-flow" className="hover:text-white transition-colors">Decision_Flow</a></li>
               </ul>
             </div>
             <div>
-              <p style={{ color: blue }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">05_Help</p>
+              <p style={{ color: BNB_GOLD }} className="mb-6 opacity-80 italic font-bold border-b border-zinc-900 pb-2">05_Help</p>
               <ul className="space-y-4 pl-4 border-l border-zinc-800">
                 <li><a href="#faq" className="hover:text-white transition-colors">FAQ</a></li>
                 <li><a href="#troubleshooting" className="hover:text-white transition-colors">Troubleshooting</a></li>
@@ -79,30 +79,30 @@ export default function DocsPage() {
                 <div className="h-px flex-1 bg-zinc-800" />
               </div>
               <div className="space-y-10">
-                <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">What is PacificaPilot?</h3>
+                <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">What is 4MemePilot?</h3>
                 <p className="text-zinc-400 text-lg leading-relaxed uppercase tracking-tighter">
-                  Autonomous AI trading agent for Pacifica perpetual futures with real-time dashboard monitoring.
+                  Autonomous AI trading agent for memecoins on the 4.meme launchpad (BNB Smart Chain) with real-time dashboard monitoring and on-chain decision logging.
                 </p>
 
                 {/* Architecture */}
                 <div id="hybrid-architecture" className="mt-24 space-y-10">
-                  <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">Architecture</h3>
+                  <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">Architecture</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed uppercase tracking-tight">
-                    PacificaPilot runs entirely on your machine — frontend, backend, and agent all local. Your private keys NEVER leave your environment.
+                    4MemePilot runs entirely on your machine — frontend, backend, and agent all local. Your private keys NEVER leave your environment. Hybrid architecture: TradeLogger contract on BSC testnet (low-cost logging), 4.meme trading on BSC mainnet (real memecoin liquidity).
                   </p>
 
-                  <div className="p-6 border border-[#00d1ff]/30 bg-[#00d1ff]/5">
-                    <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4" style={{ color: blue }}>Local Architecture</h4>
+                  <div className="p-6 border border-[#F0B90B]/30 bg-[#F0B90B]/5">
+                    <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4" style={{ color: BNB_GOLD }}>Hybrid Architecture</h4>
                     <pre className="text-zinc-400 text-[10px] font-mono leading-5 overflow-x-auto">
 {`┌─────────────────────────────────────────────────────────┐
 │              YOUR MACHINE (All Components)              │
 │                                                         │
 │  ┌─────────────────────────────────────────────────┐    │
 │  │           AGENT (Python) — Trading Logic        │    │
-│  │  • Holds YOUR Pacifica private keys             │    │
+│  │  • Holds YOUR BSC private keys                  │    │
 │  │  • Fetches config from local backend            │    │
-│  │  • Executes trades on Pacifica                  │    │
-│  │  • Logs decisions + sends heartbeats            │    │
+│  │  • Executes trades on 4.meme (mainnet)          │    │
+│  │  • Logs decisions to TradeLogger (testnet)      │    │
 │  └──────────────────┬──────────────────────────────┘    │
 │                     │ HTTPS localhost                   │
 │  ┌──────────────────▼──────────────────────────────┐    │
@@ -123,7 +123,7 @@ export default function DocsPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="p-6 border border-zinc-800 bg-zinc-950/30">
-                      <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4" style={{ color: blue }}>You Run Locally</h4>
+                      <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4" style={{ color: BNB_GOLD }}>You Run Locally</h4>
                       <ul className="space-y-3 text-zinc-500 text-[10px] uppercase tracking-tight">
                         <li className="flex gap-3"><span>•</span> Frontend (Vite) — Dashboard UI on :5173</li>
                         <li className="flex gap-3"><span>•</span> Backend (Express) — API + Auth on :3001</li>
@@ -143,12 +143,12 @@ export default function DocsPage() {
 
                   <div className="p-4 border border-[#22c55e]/50 bg-[#22c55e]/5">
                     <p className="text-[10px] uppercase tracking-tight text-[#22c55e]">
-                      <span className="font-bold">Security First:</span> Your Pacifica private keys are NEVER sent anywhere. They stay in your agent's .env file forever.
+                      <span className="font-bold">Security First:</span> Your BSC private keys are NEVER sent anywhere. They stay in your agent's .env file forever.
                     </p>
                   </div>
 
-                  <div className="p-6 border border-[#00d1ff]/30 bg-[#00d1ff]/5 mt-6">
-                    <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4" style={{ color: blue }}>🔒 Why Run Everything Locally?</h4>
+                  <div className="p-6 border border-[#F0B90B]/30 bg-[#F0B90B]/5 mt-6">
+                    <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4" style={{ color: BNB_GOLD }}>🔒 Why Run Everything Locally?</h4>
                     <p className="text-[10px] uppercase tracking-tight text-zinc-400 mb-4">
                       Private keys = Your responsibility. No hosted service should ever touch them. Running locally gives you full control over every component.
                     </p>
@@ -166,7 +166,7 @@ export default function DocsPage() {
                         <ul className="space-y-1 text-zinc-300">
                           <li>• MongoDB Atlas (DB)</li>
                           <li>• Gemini / Elfa APIs</li>
-                          <li>• Pacifica DEX</li>
+                          <li>• 4.meme API</li>
                         </ul>
                       </div>
                     </div>
@@ -174,14 +174,14 @@ export default function DocsPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {[
-                      "Real-time market data (RSI, funding, basis)",
+                      "Real-time market data (bonding curve, liquidity, holders)",
                       "Social sentiment (Elfa AI Twitter analysis)",
                       "AI reasoning (Google Gemini 2.5 Flash)",
-                      "Automated execution (Ed25519-signed orders)",
+                      "Automated execution (BSC signed transactions)",
                       "Risk management (Trailing stops, limits)"
                     ].map((item, i) => (
                       <div key={i} className="p-5 border border-zinc-900 bg-zinc-950/30 flex gap-4 items-center">
-                        <span style={{ color: blue }}>[+]</span>
+                        <span style={{ color: BNB_GOLD }}>[+]</span>
                         <span className="text-[11px] uppercase font-mono">{item}</span>
                       </div>
                     ))}
@@ -190,7 +190,7 @@ export default function DocsPage() {
 
                 {/* For End Users */}
                 <div id="for-end-users" className="mt-24 space-y-10">
-                  <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">For_End_Users</h3>
+                  <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">For_End_Users</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed uppercase tracking-tight">
                     Clone the repo and run all three services locally. Follow these steps:
                   </p>
@@ -198,19 +198,19 @@ export default function DocsPage() {
                   <div id="onboarding-steps" className="space-y-6">
                     <h4 className="text-white font-bold uppercase tracking-widest text-xs">Quick Start Guide</h4>
                     {[
-                      { step: "1", title: "Clone Repo", desc: "git clone https://github.com/MayurK-cmd/Pacificia-Trading-Bot.git" },
-                      { step: "2", title: "Get Required Keys", desc: "Gather Pacifica keys, Gemini API key, Elfa key, Privy credentials, and MongoDB URI" },
+                      { step: "1", title: "Clone Repo", desc: "git clone https://github.com/MayurK-cmd/four-meme-BNB.git" },
+                      { step: "2", title: "Get Required Keys", desc: "Gather 4.meme keys, Gemini API key, Elfa key, Privy credentials, and MongoDB URI" },
                       { step: "3", title: "Configure .env Files", desc: "Fill in backend/.env, frontend/.env, and agent/.env with your credentials" },
                       { step: "4", title: "Start Backend", desc: "cd backend && npm install && npm start — runs on http://localhost:3001" },
                       { step: "5", title: "Start Frontend", desc: "cd frontend && npm install && npm run dev — opens at http://localhost:5173" },
-                      { step: "6", title: "Connect Wallet", desc: "Open localhost:5173, click Login and connect your Ethereum wallet (MetaMask)" },
-                      { step: "7", title: "Complete Onboarding", desc: "Enter Solana wallet address, Agent private key, Agent API key" },
-                      { step: "8", title: "Configure Trading", desc: "Set symbols, position size, stop-loss, take-profit in Config tab" },
+                      { step: "6", title: "Connect Wallet", desc: "Open localhost:5173, click Login and connect your BSC wallet (MetaMask)" },
+                      { step: "7", title: "Complete Onboarding", desc: "Enter BSC wallet address, Agent private key, Agent API key" },
+                      { step: "8", title: "Configure Trading", desc: "Set watchlist token addresses, position size, stop-loss, take-profit in Config tab" },
                       { step: "9", title: "Run Agent", desc: "cd agent && pip install -r requirements.txt && python main.py" },
                       { step: "10", title: "Monitor", desc: "Watch trades execute in real-time from the Dashboard" },
                     ].map((item, i) => (
                       <div key={i} className="flex gap-6 items-start p-6 bg-zinc-950/20 border border-zinc-900">
-                        <span style={{ color: blue }} className="text-2xl font-black flex-shrink-0">{item.step}</span>
+                        <span style={{ color: BNB_GOLD }} className="text-2xl font-black flex-shrink-0">{item.step}</span>
                         <div>
                           <h5 className="text-white font-bold uppercase tracking-widest text-xs mb-1">{item.title}</h5>
                           <p className="text-zinc-500 text-[10px] uppercase tracking-tight">{item.desc}</p>
@@ -232,20 +232,20 @@ export default function DocsPage() {
 
                 {/* Agent Strengths */}
                 <div id="agent-strengths" className="mt-24 space-y-10">
-                  <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">Agent_Strengths</h3>
+                  <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">Agent_Strengths</h3>
                   <div className="grid grid-cols-1 gap-6">
                     {[
                       {
-                        title: "Parallel Symbol Processing",
-                        desc: "Thread pool executes BTC, ETH, SOL analysis concurrently — no blocking on slow API calls."
+                        title: "Bonding Curve Analysis",
+                        desc: "Real-time tracking of fill % from early stage (0-30%) to graduation (90-100%). Identifies optimal entry windows."
                       },
                       {
-                        title: "Trailing Stop-Loss System",
-                        desc: "High-water mark tracking locks in profits. Long trails peak, short trails trough — never resets against you."
+                        title: "Rug Risk Detection",
+                        desc: "Holder concentration analysis, liquidity checks, launch age filtering. Avoids obvious scams automatically."
                       },
                       {
-                        title: "Balance-Aware Sizing",
-                        desc: "Dynamic cap at 90% of available collateral. Prevents overextension and failed orders."
+                        title: "Elfa Social Sentiment",
+                        desc: "Engagement scores, mention counts, trending rank from Elfa AI. Social momentum alongside on-chain data."
                       },
                       {
                         title: "Persistent Position State",
@@ -256,12 +256,12 @@ export default function DocsPage() {
                         desc: "Gemini 2.5 Flash primary + rule-based fallback. Always has a decision path."
                       },
                       {
-                        title: "Basis Spread Detection",
-                        desc: "Pacifica mark vs Binance spot. Flags arbitrage opportunities (>2% spread alert)."
+                        title: "On-Chain Audit Log",
+                        desc: "Every decision logged to TradeLogger contract on BSC testnet. Tamper-proof trading history."
                       }
                     ].map((s, i) => (
-                      <div key={i} className="p-6 bg-zinc-950/20 border border-zinc-900 hover:border-[#00d1ff]/50 transition-all">
-                        <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-2" style={{ color: blue }}>{s.title}</h4>
+                      <div key={i} className="p-6 bg-zinc-950/20 border border-zinc-900 hover:border-[#F0B90B]/50 transition-all">
+                        <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-2" style={{ color: BNB_GOLD }}>{s.title}</h4>
                         <p className="text-zinc-500 text-[10px] uppercase tracking-tight">{s.desc}</p>
                       </div>
                     ))}
@@ -279,12 +279,12 @@ export default function DocsPage() {
 
               {/* Full Local */}
               <div className="space-y-10 mb-24">
-                <h3 id="option1-hybrid" style={{ color: blue }} className="text-2xl font-black uppercase tracking-widest italic border-b border-[#1a2b3b] pb-4">Run Everything Locally</h3>
+                <h3 id="option1-hybrid" style={{ color: BNB_GOLD }} className="text-2xl font-black uppercase tracking-widest italic border-b border-[#1a2b3b] pb-4">Run Everything Locally</h3>
                 <p className="text-zinc-400 text-sm leading-relaxed uppercase tracking-tight">
                   Frontend, backend, and agent all run on your machine. Full control. No hosted dependencies.
                 </p>
 
-                <div className="p-6 border border-[#00d1ff]/30 bg-[#00d1ff]/5">
+                <div className="p-6 border border-[#F0B90B]/30 bg-[#F0B90B]/5">
                   <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4">Architecture</h4>
                   <pre className="text-zinc-400 text-xs font-mono leading-6">
 {`┌─────────────────────┐      ┌──────────────────┐      ┌──────────────────┐
@@ -298,14 +298,14 @@ export default function DocsPage() {
                 <div className="space-y-6">
                   <h4 className="text-white font-bold uppercase tracking-widest text-xs">Step 1: Get Required Keys</h4>
                   {[
-                    { step: "1", text: "Pacifica account: test-app.pacifica.fi (get private key + API key)" },
+                    { step: "1", text: "BSC Wallet: MetaMask/Trust Wallet (get private key for trading)" },
                     { step: "2", text: "Google Gemini key: aistudio.google.com/apikey" },
                     { step: "3", text: "Elfa AI key (optional): elfa.ai" },
                     { step: "4", text: "Privy App ID + Secret: privy.io (create a free app)" },
                     { step: "5", text: "MongoDB URI: mongodb.com/atlas (free M0 cluster)" },
                   ].map((item, i) => (
                     <div key={i} className="flex gap-6 items-center p-6 bg-zinc-950/20 border border-zinc-900">
-                      <span style={{ color: blue }} className="text-2xl font-black">{item.step}</span>
+                      <span style={{ color: BNB_GOLD }} className="text-2xl font-black">{item.step}</span>
                       <p className="text-zinc-400 text-sm uppercase tracking-tight">{item.text}</p>
                     </div>
                   ))}
@@ -315,11 +315,11 @@ export default function DocsPage() {
                   <h4 className="text-white font-bold uppercase tracking-widest text-xs">Step 2: Setup Environment Files</h4>
                   <pre className="bg-[#050a12] border border-[#1a2b3b] p-8 text-zinc-300 text-sm font-mono leading-7 overflow-x-auto shadow-2xl">
 {`# Clone repo
-git clone https://github.com/MayurK-cmd/Pacificia-Trading-Bot.git
-cd Pacificia-Trading-Bot
+git clone https://github.com/MayurK-cmd/four-meme-BNB.git
+cd four-meme-BNB
 
 # backend/.env
-MONGODB_URI=mongodb+srv://<user>:<pass>@cluster.mongodb.net/pacifica
+MONGODB_URI=mongodb+srv://<user>:<pass>@cluster.mongodb.net/4memepilot
 PRIVY_APP_ID=<your_privy_app_id>
 PRIVY_APP_SECRET=<your_privy_app_secret>
 ENCRYPTION_SECRET=<32_char_hex>
@@ -328,22 +328,27 @@ AGENT_API_SECRET=<your_chosen_secret>
 # frontend/.env
 VITE_API_URL=http://localhost:3001
 VITE_PRIVY_APP_ID=<your_privy_app_id>
+VITE_BSC_RPC_URL=https://bsc-testnet-dataseed.bnbchain.org
+VITE_TRADE_LOGGER_ADDRESS=0xEe39002BF9783DB5dac224Df968D0e3c5CE39a2B
 
 # agent/.env
 BACKEND_URL=http://localhost:3001
 AGENT_API_SECRET=<same_as_backend>
+BSC_RPC_URL=https://bsc-dataseed.binance.org
 
-# Your Pacifica keys (NEVER leave your machine!)
-PACIFICA_PRIVATE_KEY=<your_base58_private_key>
-PACIFICA_AGENT_PRIVATE_KEY=<your_agent_wallet_key>
-PACIFICA_AGENT_PUBLIC_KEY=<your_agent_api_key>
+# Your BSC wallet (NEVER leave your machine!)
+WALLET_PRIVATE_KEY=<your_bsc_private_key>
 
 # AI services
 GEMINI_API_KEY=<your_gemini_key>
 ELFA_API_KEY=<your_elfa_key>
 
 # Safety - start with paper trading!
-DRY_RUN=true`}
+DRY_RUN=true
+
+# Trading mode: watchlist, trending, or new
+SCAN_MODE=watchlist
+WATCHLIST=<comma_separated_token_addresses>`}
                   </pre>
                 </div>
 
@@ -367,9 +372,9 @@ cd agent && pip install -r requirements.txt && python main.py`}
                   <h4 className="text-white font-bold uppercase tracking-widest text-xs">Step 4: Connect Dashboard</h4>
                   <pre className="bg-[#050a12] border border-[#1a2b3b] p-8 text-zinc-300 text-sm font-mono leading-7">
 {`1. Open: http://localhost:5173
-2. Login with Privy (connect Ethereum wallet)
-3. Complete onboarding (enter Pacifica keys)
-4. Configure trading (symbols, risk params)
+2. Login with Privy (connect BSC wallet)
+3. Complete onboarding (enter BSC wallet address)
+4. Configure trading (watchlist tokens, risk params)
 5. Watch your agent trade in real-time!`}
                   </pre>
                 </div>
@@ -391,7 +396,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
 
               {/* Risk Profiles */}
               <div id="risk-profiles" className="space-y-10 mb-24">
-                <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">Risk Profiles</h3>
+                <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">Risk Profiles</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {[
                     {
@@ -402,7 +407,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
                     },
                     {
                       name: "Balanced",
-                      color: "#00d1ff",
+                      color: "#F0B90B",
                       sl: "3%", tp: "6%", conf: "60%",
                       desc: "Moderate risk. Default profile for most users."
                     },
@@ -428,7 +433,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
 
               {/* Simulation Mode */}
               <div id="simulation-mode" className="space-y-10">
-                <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">Simulation Mode (DRY_RUN)</h3>
+                <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">Simulation Mode (DRY_RUN)</h3>
                 <p className="text-zinc-400 text-sm leading-relaxed uppercase tracking-tight">
                   Paper trading — agent makes decisions but no real orders execute.
                 </p>
@@ -447,7 +452,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
                   <div className="p-6 border border-red-900/30 bg-red-950/5">
                     <h4 className="text-red-400 font-bold uppercase tracking-widest text-xs mb-4">DRY_RUN=false</h4>
                     <ul className="space-y-3 text-zinc-500 text-[10px] uppercase tracking-tight">
-                      <li className="flex gap-3"><span>⚠</span> Real orders on Pacifica</li>
+                      <li className="flex gap-3"><span>⚠</span> Real orders on 4.meme</li>
                       <li className="flex gap-3"><span>⚠</span> Uses actual wallet funds</li>
                       <li className="flex gap-3"><span>⚠</span> Full execution active</li>
                       <li className="flex gap-3"><span>⚠</span> Real money at risk</li>
@@ -455,20 +460,20 @@ cd agent && pip install -r requirements.txt && python main.py`}
                   </div>
                 </div>
 
-                <div className="p-6 border border-[#00d1ff]/30 bg-[#00d1ff]/5">
-                  <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4" style={{ color: blue }}>How Simulation Works</h4>
+                <div className="p-6 border border-[#F0B90B]/30 bg-[#F0B90B]/5">
+                  <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-4" style={{ color: BNB_GOLD }}>How Simulation Works</h4>
                   <div className="space-y-4 text-zinc-400 text-sm uppercase tracking-tight">
                     <p>
-                      <span className="text-white font-bold">1. Signal Fetch:</span> Agent fetches RSI, funding, basis, sentiment — identical to live mode.
+                      <span className="text-white font-bold">1. Signal Fetch:</span> Agent fetches bonding curve %, liquidity, holder count, Elfa sentiment — identical to live mode.
                     </p>
                     <p>
-                      <span className="text-white font-bold">2. AI Decision:</span> Gemini analyzes and outputs LONG/SHORT/HOLD with confidence.
+                      <span className="text-white font-bold">2. AI Decision:</span> Gemini analyzes and outputs BUY/SELL/HOLD with confidence.
                     </p>
                     <p>
                       <span className="text-white font-bold">3. Order Simulation:</span> If confidence &gt; threshold, agent logs what it WOULD have traded (size, entry price).
                     </p>
                     <p>
-                      <span className="text-white font-bold">4. Virtual Tracking:</span> Agent tracks the simulated position, updates trailing stops, calculates PnL.
+                      <span className="text-white font-bold">4. Virtual Tracking:</span> Agent tracks the simulated position, monitors stop-loss/take-profit levels, calculates PnL.
                     </p>
                     <p>
                       <span className="text-white font-bold">5. Exit Simulation:</span> Stop-loss/take-profit triggers are logged as if executed.
@@ -492,7 +497,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
               </div>
 
               <div id="signal-mechanics" className="bg-[#050a12]/30 border border-[#1a2b3b] p-10">
-                <h3 style={{ color: blue }} className="text-sm font-black uppercase mb-10 tracking-widest italic">Signal_Interpretation</h3>
+                <h3 style={{ color: BNB_GOLD }} className="text-sm font-black uppercase mb-10 tracking-widest italic">Signal_Interpretation</h3>
                 <table className="w-full border-collapse text-left font-mono text-[11px] text-zinc-500">
                   <thead>
                     <tr className="border-b border-zinc-800 uppercase">
@@ -502,30 +507,30 @@ cd agent && pip install -r requirements.txt && python main.py`}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-900 uppercase tracking-tighter">
-                    <tr><td className="py-6 font-bold">RSI-14 (1H)</td><td className="py-6 text-[#00d1ff]">&lt; 35</td><td className="py-6 text-red-900">&gt; 65</td></tr>
-                    <tr><td className="py-6 font-bold">RSI-14 (5M)</td><td className="py-6 text-[#00d1ff]">&lt; 35</td><td className="py-6 text-red-900">&gt; 65</td></tr>
-                    <tr><td className="py-6 font-bold">Funding</td><td className="py-6 text-[#00d1ff]">Negative</td><td className="py-6 text-red-900">Positive</td></tr>
-                    <tr><td className="py-6 font-bold">Basis</td><td className="py-6 text-[#00d1ff]">Discount</td><td className="py-6 text-red-900">Premium</td></tr>
-                    <tr><td className="py-6 font-bold">Sentiment</td><td className="py-6 text-[#00d1ff]">&gt; 0.3</td><td className="py-6 text-zinc-700">&lt; 0.1</td></tr>
+                    <tr><td className="py-6 font-bold">Bonding Curve</td><td className="py-6 text-[#F0B90B]">30-70% (momentum)</td><td className="py-6 text-red-900">&gt;90% (crowded)</td></tr>
+                    <tr><td className="py-6 font-bold">Liquidity</td><td className="py-6 text-[#F0B90B]">&gt;$10,000</td><td className="py-6 text-red-900">&lt;$3,000</td></tr>
+                    <tr><td className="py-6 font-bold">Top 10 Holders</td><td className="py-6 text-[#F0B90B]">&lt;40%</td><td className="py-6 text-red-900">&gt;60%</td></tr>
+                    <tr><td className="py-6 font-bold">Buy/Sell Ratio</td><td className="py-6 text-[#F0B90B]">&gt;3:1</td><td className="py-6 text-red-900">&lt;1:1</td></tr>
+                    <tr><td className="py-6 font-bold">Elfa Sentiment</td><td className="py-6 text-[#F0B90B]">&gt;0.6</td><td className="py-6 text-zinc-700">&lt;0.3</td></tr>
                   </tbody>
                 </table>
               </div>
 
               <div id="decision-flow" className="mt-24 space-y-12">
-                <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">Decision_Flow</h3>
+                <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">Decision_Flow</h3>
                 <div className="grid grid-cols-1 gap-6">
                   {[
-                    { id: "A", t: "FETCH_CONFIG", d: "Poll /api/agent/config every 5 min for symbols, risk params." },
-                    { id: "B", t: "MARKET_DATA", d: "RSI-14 (5m/1h), funding, basis vs Binance — parallel per symbol." },
+                    { id: "A", t: "FETCH_CONFIG", d: "Poll /api/agent/config every 5 min for tokens, risk params." },
+                    { id: "B", t: "MARKET_DATA", d: "Bonding curve %, liquidity, holder count, buy/sell ratio — parallel per token." },
                     { id: "C", t: "SENTIMENT", d: "Elfa AI engagement score, mention count, trending rank." },
                     { id: "D", t: "GEMINI_AI", d: "Synthesizes all signals. Outputs action, confidence, size_pct, reasoning." },
-                    { id: "E", t: "EXECUTE", d: "If confidence &gt; minConfidence, place order. Track entry + trailing marks." },
+                    { id: "E", t: "EXECUTE", d: "If confidence &gt; minConfidence, execute trade via 4.meme TokenManager. Log decision to TradeLogger." },
                     { id: "F", t: "MONITOR", d: "Check trailing stop-loss / take-profit each cycle. Close if triggered." }
                   ].map((step, i) => (
-                    <div key={i} className="flex gap-8 p-8 bg-zinc-950/20 border border-zinc-900 hover:border-[#00d1ff]/50 transition-all">
+                    <div key={i} className="flex gap-8 p-8 bg-zinc-950/20 border border-zinc-900 hover:border-[#F0B90B]/50 transition-all">
                        <span className="text-zinc-800 text-4xl font-black italic">{step.id}</span>
                        <div>
-                          <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-1" style={{ color: blue }}>{step.t}</h4>
+                          <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-1" style={{ color: BNB_GOLD }}>{step.t}</h4>
                           <p className="text-zinc-500 text-xs leading-relaxed uppercase">{step.d}</p>
                        </div>
                     </div>
@@ -543,36 +548,36 @@ cd agent && pip install -r requirements.txt && python main.py`}
 
               {/* FAQ */}
               <div id="faq" className="space-y-10 mb-24">
-                <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">FAQ</h3>
+                <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">FAQ</h3>
                 <div className="space-y-6">
                   {[
                     {
                       q: "What is the minimum capital required?",
-                      a: "Pacifica requires $10 minimum per order. Recommended starting capital: $50-100 for testing."
+                      a: "You need BNB for gas (testnet) and trading (mainnet). Start with 0.1-0.5 BNB for testing. DRY_RUN=true by default."
                     },
                     {
                       q: "Is my private key stored anywhere?",
                       a: "No. Keys are AES-256 encrypted in MongoDB. Agent holds keys only in memory during execution."
                     },
                     {
-                      q: "Can I run multiple symbols?",
-                      a: "Yes. Up to 10 symbols concurrently. Agent uses thread pool for parallel analysis."
+                      q: "How many tokens can I track?",
+                      a: "Up to 10 tokens concurrently in watchlist mode. Agent uses thread pool for parallel analysis."
                     },
                     {
                       q: "How often does the agent trade?",
-                      a: "Default cycle: 5 minutes per symbol. Actual trades depend on market conditions and confidence thresholds."
+                      a: "Default cycle: 5 minutes per token. Actual trades depend on market conditions and confidence thresholds."
                     },
                     {
                       q: "What happens if Gemini API fails?",
-                      a: "Fallback rule-based engine activates. Uses RSI, funding, and sentiment signals for decisions."
+                      a: "Fallback rule-based engine activates. Uses bonding curve %, liquidity, holder concentration, and sentiment signals for decisions."
                     },
                     {
-                      q: "Can I use this on mainnet?",
-                      a: "Yes. Switch PACIFICA_BASE_URL to mainnet and set DRY_RUN=false. Be cautious."
+                      q: "Is this trading on mainnet or testnet?",
+                      a: "Hybrid: TradeLogger contract is on BSC testnet (low-cost audit logging), 4.meme trading is on BSC mainnet (real memecoin liquidity). Set DRY_RUN=false for live trading."
                     }
                   ].map((item, i) => (
                     <div key={i} className="p-6 bg-zinc-950/20 border border-zinc-900">
-                      <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-3" style={{ color: blue }}>{item.q}</h4>
+                      <h4 className="text-white font-bold uppercase tracking-widest text-xs mb-3" style={{ color: BNB_GOLD }}>{item.q}</h4>
                       <p className="text-zinc-500 text-[10px] uppercase tracking-tight leading-relaxed">{item.a}</p>
                     </div>
                   ))}
@@ -581,7 +586,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
 
               {/* Troubleshooting */}
               <div id="troubleshooting" className="space-y-10">
-                <h3 style={{ color: blue }} className="text-xl font-bold uppercase tracking-widest italic">Troubleshooting</h3>
+                <h3 style={{ color: BNB_GOLD }} className="text-xl font-bold uppercase tracking-widest italic">Troubleshooting</h3>
                 <div className="space-y-6">
                   {[
                     {
@@ -590,7 +595,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
                     },
                     {
                       issue: "No market data appearing",
-                      fix: "Verify Pacifica keys are correct. Enable 'useBinanceFallback' in config."
+                      fix: "Verify token addresses in WATCHLIST are correct 4.meme mainnet contracts. Check BSC_RPC_URL in agent/.env."
                     },
                     {
                       issue: "Agent disconnected after sleep",
@@ -598,7 +603,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
                     },
                     {
                       issue: "Orders failing with 'insufficient balance'",
-                      fix: "Reduce maxPositionUsdc or fund your Pacifica wallet. Agent caps at 90% of available balance."
+                      fix: "Reduce MAX_POSITION_BNB or fund your BSC wallet. Agent caps at 90% of available balance."
                     },
                     {
                       issue: "Gemini API errors",
@@ -615,7 +620,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
                   ].map((item, i) => (
                     <div key={i} className="p-6 bg-zinc-950/20 border border-zinc-900">
                       <h4 className="text-red-400 font-bold uppercase tracking-widest text-xs mb-3">⚠ {item.issue}</h4>
-                      <p className="text-zinc-400 text-[10px] uppercase tracking-tight leading-relaxed"><span style={{ color: blue }} className="font-bold">FIX:</span> {item.fix}</p>
+                      <p className="text-zinc-400 text-[10px] uppercase tracking-tight leading-relaxed"><span style={{ color: BNB_GOLD }} className="font-bold">FIX:</span> {item.fix}</p>
                     </div>
                   ))}
                 </div>
@@ -628,8 +633,8 @@ cd agent && pip install -r requirements.txt && python main.py`}
           <footer className="border-t border-[#1a2b3b] bg-black px-12 py-12 flex flex-col md:flex-row justify-between items-center gap-12 text-[12px] font-mono uppercase tracking-[0.3em] text-zinc-500 mt-20">
             <div className="flex flex-col md:flex-row gap-12">
               <span className="cursor-default italic text-zinc-700">© 2026_PILOT_CORE</span>
-              <a href="https://github.com/MayurK-cmd/Pacificia-Trading-Bot" target="_blank" rel="noreferrer" className="underline underline-offset-8 decoration-zinc-800 hover:text-white transition-colors font-bold">Github_Source</a>
-              <a href="https://pacifica.gitbook.io/docs/hackathon/pacifica-hackathon" target="_blank" rel="noreferrer" className="underline underline-offset-8 decoration-zinc-800 hover:text-white transition-colors font-bold">Pacifica_Hackathon</a>
+              <a href="https://github.com/MayurK-cmd/four-meme-BNB" target="_blank" rel="noreferrer" className="underline underline-offset-8 decoration-zinc-800 hover:text-white transition-colors font-bold">Github_Source</a>
+              <a href="https://dorahacks.io/hackathon/fourmemeaisprint/detail" target="_blank" rel="noreferrer" className="underline underline-offset-8 decoration-zinc-800 hover:text-white transition-colors font-bold">DoraHacks_Submission</a>
               <button className="hover:text-white transition-colors text-zinc-600">Protocol_Status: {systemTime}</button>
             </div>
             <div className="flex gap-10 items-center">
@@ -638,7 +643,7 @@ cd agent && pip install -r requirements.txt && python main.py`}
                   animate={{ opacity: [1, 0.4, 1] }}
                   transition={{ repeat: Infinity, duration: 2 }}
                   className="w-2.5 h-2.5 rounded-full"
-                  style={{ backgroundColor: blue, boxShadow: `0 0 15px ${blue}` }}
+                  style={{ backgroundColor: BNB_GOLD, boxShadow: `0 0 15px ${BNB_GOLD}` }}
                  />
                  <span className="text-zinc-300 font-black tracking-[0.1em]">SYSTEM_ACTIVE</span>
               </div>
